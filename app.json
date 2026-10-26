@@ -1,26 +1,32 @@
 {
   "expo": {
     "name": "Occur",
-    "slug": "Occur",
+    "slug": "occur",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "occur",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png",
+      "bundleIdentifier": "com.sadeqodeh.occur",
+      "supportsTablet": false,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F3EEE5",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.sadeqodeh.occur"
     },
     "web": {
-      "output": "server",
+      "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -28,15 +34,29 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#F3EEE5",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 140,
+          "dark": {
+            "backgroundColor": "#13110E",
+            "image": "./assets/images/splash-icon.png"
+          }
         }
-      ]
+      ],
+      "expo-sqlite",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Occur saves an approximate place with entries for the bubbles where you turn on “Remember where”."
+        }
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "description": "How many times, and when? One-tap life logging with natural-language answers."
   }
 }

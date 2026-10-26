@@ -1,0 +1,6 @@
+# Minimal Supabase CLI config. Run `supabase link --project-ref <ref>` before
+# `supabase db push` / `supabase functions deploy ask`.
+project_id = "occur"
+
+[functions.ask]
+verify_jwt = true
