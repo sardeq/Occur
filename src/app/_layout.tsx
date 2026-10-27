@@ -12,6 +12,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
+import { DialogHost } from '@/components/dialog-host';
 import { bootAuth, useAuth } from '@/lib/auth';
 import { demoSeed } from '@/lib/demo';
 import { initData, resetData } from '@/lib/store';
@@ -82,6 +83,7 @@ export default function RootLayout() {
         <Stack.Screen name="auth/callback" />
         <Stack.Screen name="explore" />
       </Stack>
+      <DialogHost />
     </ThemeProvider>
   );
 }

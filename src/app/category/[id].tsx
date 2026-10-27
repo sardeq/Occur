@@ -1,16 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import {
-  ActionSheetIOS,
-  Alert,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,6 +12,7 @@ import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
 import { argmax, gaps, hourHistogram, inRange, periodStats, streaks, typicalHour, weekdayHistogram } from '@/lib/stats';
+import { showActionSheet } from '@/lib/dialog';
 import { deleteEvent, logEvent, useData } from '@/lib/store';
 import {
   DAY,
@@ -169,24 +161,11 @@ export default function CategoryScreen() {
       if (Platform.OS !== 'web')
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     };
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title,
-          message,
-          options: ['Change time', 'Delete entry', 'Cancel'],
-          destructiveButtonIndex: 1,
-          cancelButtonIndex: 2,
-        },
-        (i) => (i === 0 ? edit() : i === 1 ? del() : undefined),
-      );
-    } else {
-      Alert.alert(title, message, [
-        { text: 'Change time', onPress: edit },
-        { text: 'Delete entry', style: 'destructive', onPress: del },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
+    showActionSheet(title, message, [
+      { label: 'Change time', onPress: edit },
+      { label: 'Delete entry', style: 'destructive', onPress: del },
+      { label: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const clockSize = Math.min(width - 72, 300);

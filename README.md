@@ -37,12 +37,16 @@ Everything the app uses ships in Expo Go (SDK 58), so no custom native build is 
    - Google Cloud Console → *Credentials* → create an **OAuth client ID (Web application)**. Authorised redirect URI: `https://<your-ref>.supabase.co/auth/v1/callback`.
    - Supabase → *Authentication → Providers → Google*: enable, paste the client ID and secret.
    - Supabase → *Authentication → URL Configuration → Redirect URLs*: add `occur://auth/callback` (dev/production builds) and `exp://**` (Expo Go).
-4. **AI questions:** deploy the edge function and give it a key (Gemini has a free tier):
-   ```bash
-   supabase secrets set LLM_PROVIDER=gemini GEMINI_API_KEY=...      # or openai / anthropic
-   supabase functions deploy ask
-   ```
-   Optional: `LLM_MODEL` overrides the default model (`gemini-3.6-flash`, `gpt-5-mini` or `claude-haiku-4-5`).
+4. **AI questions (OpenRouter):** create a key at [openrouter.ai](https://openrouter.ai/keys), then deploy the `ask` edge function. Either:
+   - **Dashboard (no CLI):** *Edge Functions → Deploy a new function → Via editor*, name it `ask`, paste `supabase/functions/ask/index.ts`, deploy. Then *Edge Functions → Secrets* → add `OPENROUTER_API_KEY`.
+   - **CLI:**
+     ```bash
+     npx supabase login
+     npx supabase link --project-ref <your-ref>
+     npx supabase secrets set OPENROUTER_API_KEY=sk-or-...
+     npx supabase functions deploy ask --use-api
+     ```
+   Optional secret `LLM_MODEL` picks any OpenRouter model (default `google/gemini-3.6-flash`).
    If the function isn't deployed, Ask still works using the on‑device parser.
 
 ---
@@ -88,7 +92,7 @@ flowchart LR
   end
   Queue -- "upserts / deletes (RLS)" --> PG[("Supabase Postgres<br/>categories · events")]
   PG -- "pull on launch / foreground" --> Store
-  Engine -- "question + category names only" --> Fn["Edge function 'ask'<br/>Gemini · OpenAI · Claude"]
+  Engine -- "question + category names only" --> Fn["Edge function 'ask'<br/>OpenRouter (any model)"]
   Fn -- "QuerySpec JSON" --> Engine
   Auth["Supabase Auth<br/>Google"] --- PG
 ```
@@ -176,7 +180,7 @@ src/
   theme/                  colour tokens, typography, bubble palette
 supabase/
   migrations/             schema, RLS, triggers, summary function
-  functions/ask/          edge function: prompt + provider adapters
+  functions/ask/          edge function (single file): prompt, validation, OpenRouter call
 tests/query.test.ts       parser, executor, sanitizer and stats tests
 ```
 

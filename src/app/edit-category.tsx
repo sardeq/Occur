@@ -1,7 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bubble } from '@/components/bubble';
 import { Chip, PillButton, RoundButton, tapHaptic } from '@/components/buttons';
 import { Text } from '@/components/text';
+import { showDialog } from '@/lib/dialog';
 import { requestLocationPermission } from '@/lib/location';
 import { addCategory, deleteCategory, updateCategory, useData } from '@/lib/store';
 import { EMOJIS, SUGGESTIONS } from '@/lib/suggestions';
@@ -84,23 +84,26 @@ export default function EditCategory() {
     const ok = await requestLocationPermission();
     if (ok) setTrackLocation(true);
     else
-      Alert.alert(
+      showDialog(
         'Location is off',
-        'Occur needs “While Using the App” location access to remember where. You can turn it on in iOS Settings.',
+        Platform.OS === 'web'
+          ? 'Places are recorded on the phone app only.'
+          : 'Occur needs “While Using the App” location access to remember where. You can turn it on in Settings.',
+        [{ label: 'OK', style: 'cancel' }],
       );
   };
 
   const confirmDelete = () => {
     if (!existing) return;
-    Alert.alert(
+    showDialog(
       `Delete ${existing.name}?`,
       eventCount
         ? `This removes the bubble and all ${eventCount} entries. It can't be undone.`
         : 'This removes the bubble.',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          label: 'Delete',
           style: 'destructive',
           onPress: () => {
             deleteCategory(existing.id);

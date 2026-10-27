@@ -1,15 +1,15 @@
 import Constants from 'expo-constants';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { GoogleMark, Icon, type IconName } from '@/components/icon';
+import { Icon, type IconName } from '@/components/icon';
 import { PillButton, RoundButton } from '@/components/buttons';
 import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
-import { linkGoogle, signOut, useAuth } from '@/lib/auth';
+import { signOut, useAuth } from '@/lib/auth';
+import { showDialog } from '@/lib/dialog';
 import { deleteAllData, resetData, sync, useData, wipeLocalCache } from '@/lib/store';
 import { formatRelative } from '@/lib/time';
 import { font, radius, useTheme } from '@/theme';
@@ -66,7 +66,6 @@ export default function Settings() {
   const syncing = useData((s) => s.syncing);
   const lastSyncedAt = useData((s) => s.lastSyncedAt);
   const syncError = useData((s) => s.syncError);
-  const [linking, setLinking] = useState(false);
   const demo = status === 'demo';
 
   const exportCsv = async () => {
@@ -89,53 +88,55 @@ export default function Settings() {
         .map(csvCell)
         .join(',');
     });
-    await Share.share({ message: [header, ...lines].join('\n'), title: 'occur-export.csv' });
+    const csv = [header, ...lines].join('\n');
+    if (Platform.OS === 'web') {
+      // browsers: download a real .csv file
+      const doc = (globalThis as any).document;
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const href = URL.createObjectURL(blob);
+      const a = doc.createElement('a');
+      a.href = href;
+      a.download = 'occur-export.csv';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(href), 1000);
+      return;
+    }
+    await Share.share({ message: csv, title: 'occur-export.csv' });
   };
 
   const confirmWipe = () =>
-    Alert.alert(
+    showDialog(
       'Delete everything?',
       `This deletes ${categories.length} bubbles and ${events.length} entries${demo ? '' : ' from your account'}. It can't be undone.`,
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete everything', style: 'destructive', onPress: () => deleteAllData() },
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Delete everything', style: 'destructive', onPress: () => deleteAllData() },
       ],
     );
 
   const doSignOut = () =>
-    Alert.alert(
-      'Sign out?',
-      user?.isAnonymous && !demo
-        ? 'You are using a guest account. Signing out loses access to its data unless you save it with Google first.'
+    showDialog(
+      demo ? 'Leave the demo?' : 'Sign out?',
+      demo
+        ? 'The sample data on this phone will be reset. You can sign in with Google or start the demo again.'
         : pending
           ? `${pending} changes haven't synced yet and will be lost.`
           : 'Your data stays safe in your account.',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: 'Sign out',
+          label: demo ? 'Leave demo' : 'Sign out',
           style: 'destructive',
-          onPress: async () => {
+          onPress: () => {
             if (user) wipeLocalCache(user.id);
             resetData();
-            await signOut();
+            void signOut();
           },
         },
       ],
     );
 
-  const upgrade = async () => {
-    setLinking(true);
-    try {
-      await linkGoogle();
-    } catch (e: any) {
-      Alert.alert('Could not link Google', e?.message ?? 'Please try again.');
-    } finally {
-      setLinking(false);
-    }
-  };
-
-  const displayName = demo ? 'Demo mode' : (user?.name ?? (user?.isAnonymous ? 'Guest' : (user?.email ?? 'You')));
+  const displayName = demo ? 'Demo mode' : (user?.name ?? user?.email ?? 'You');
   const syncLine = demo
     ? 'Everything stays on this device.'
     : pending
@@ -162,30 +163,10 @@ export default function Settings() {
           <View style={{ flex: 1 }}>
             <Text variant="serif">{displayName}</Text>
             <Text variant="caption" tone="soft">
-              {demo ? 'Sample data, no account' : (user?.email ?? (user?.isAnonymous ? 'Guest account' : ''))}
+              {demo ? 'Sample data, no account' : (user?.email ?? '')}
             </Text>
           </View>
         </View>
-
-        {user?.isAnonymous && !demo && (
-          <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line, padding: 16, gap: 10 }]}>
-            <Text variant="bodyStrong">Keep your data</Text>
-            <Text variant="caption" tone="soft">
-              Link Google to keep everything you’ve logged and use it on other devices.
-            </Text>
-            <PillButton
-              label="Save with Google"
-              loading={linking}
-              leading={
-                <View style={styles.gBadge}>
-                  <GoogleMark size={14} />
-                </View>
-              }
-              onPress={upgrade}
-              style={{ height: 50 }}
-            />
-          </View>
-        )}
 
         <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line }]}>
           <View style={[styles.rowItem]}>
@@ -256,14 +237,6 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth * 2,
-    justifyContent: 'center',
-  },
-  gBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    alignItems: 'center',
     justifyContent: 'center',
   },
 });
