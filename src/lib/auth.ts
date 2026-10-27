@@ -50,7 +50,15 @@ let booted = false;
 export async function bootAuth() {
   if (booted) return;
   booted = true;
-  if (process.env.EXPO_PUBLIC_DEMO === '1' || kv.getItem(DEMO_KEY) === '1') {
+  const demo = process.env.EXPO_PUBLIC_DEMO === '1' || kv.getItem(DEMO_KEY) === '1';
+  if (isSupabaseConfigured) {
+    // Listen even in demo mode, so signing in with Google after leaving the demo works.
+    supabase.auth.onAuthStateChange((_event, session) => {
+      if (useAuth.getState().status === 'demo') return;
+      setSession(session);
+    });
+  }
+  if (demo) {
     useAuth.setState({ status: 'demo', user: DEMO_USER, session: null });
     return;
   }
@@ -58,12 +66,12 @@ export async function bootAuth() {
     useAuth.setState({ status: 'signedOut', user: null, session: null });
     return;
   }
-  supabase.auth.onAuthStateChange((_event, session) => {
-    if (useAuth.getState().status === 'demo') return;
-    setSession(session);
-  });
-  const { data } = await supabase.auth.getSession();
-  setSession(data.session);
+  try {
+    const { data } = await supabase.auth.getSession();
+    setSession(data.session);
+  } catch {
+    setSession(null);
+  }
 }
 
 /** Pulls the PKCE code (or legacy tokens) out of an OAuth redirect URL. */
@@ -118,31 +126,10 @@ export async function signInWithGoogle(): Promise<boolean> {
   return runBrowserFlow(data.url, redirectTo);
 }
 
-/** Try the app without an account (Supabase anonymous user). Can be upgraded to Google later. */
-export async function continueAsGuest(): Promise<void> {
-  if (!isSupabaseConfigured) return startDemo();
-  const { error } = await supabase.auth.signInAnonymously();
-  if (error) throw error;
-}
-
-/** Upgrade a guest account to Google, keeping all data (same user id). */
-export async function linkGoogle(): Promise<boolean> {
-  const redirectTo = authRedirectUrl();
-  const { data, error } = await supabase.auth.linkIdentity({
-    provider: 'google',
-    options: { redirectTo, skipBrowserRedirect: true },
-  });
-  if (error) throw error;
-  if (!data?.url) return false;
-  const ok = await runBrowserFlow(data.url, redirectTo);
-  if (ok) {
-    const { data: s } = await supabase.auth.refreshSession();
-    setSession(s.session);
-  }
-  return ok;
-}
-
-/** Local-only demo with sample data — no backend required. */
+/**
+ * "Try it without an account": a local-only demo with sample data. Never
+ * touches the network, so it works offline or without Supabase configured.
+ */
 export async function startDemo() {
   kv.setItem(DEMO_KEY, '1');
   useAuth.setState({ status: 'demo', user: DEMO_USER, session: null });

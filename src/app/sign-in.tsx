@@ -18,7 +18,7 @@ import { Bubble } from '@/components/bubble';
 import { PillButton } from '@/components/buttons';
 import { GoogleMark } from '@/components/icon';
 import { Text } from '@/components/text';
-import { continueAsGuest, signInWithGoogle, startDemo } from '@/lib/auth';
+import { signInWithGoogle, startDemo } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { font, useTheme } from '@/theme';
 import { swatch } from '@/theme/palette';
@@ -161,35 +161,31 @@ export default function SignIn() {
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(150).duration(600)} style={{ gap: 10, marginTop: 26 }}>
-          {isSupabaseConfigured ? (
-            <>
-              <PillButton
-                label="Continue with Google"
-                leading={
-                  <View style={[styles.gBadge, { backgroundColor: '#fff' }]}>
-                    <GoogleMark size={16} />
-                  </View>
-                }
-                loading={busy === 'google'}
-                disabled={!!busy}
-                onPress={() => run('google', signInWithGoogle)}
-              />
-              <PillButton
-                variant="ghost"
-                label="Try it without an account"
-                loading={busy === 'guest'}
-                disabled={!!busy}
-                onPress={() => run('guest', continueAsGuest)}
-              />
-            </>
-          ) : (
-            <>
-              <PillButton label="Explore the demo" icon="sparkle" onPress={() => run('guest', startDemo)} />
-              <Text variant="caption" tone="faint" style={{ textAlign: 'center' }}>
-                Google sign-in turns on once Supabase keys are set in .env.local (see README).
-              </Text>
-            </>
+          {isSupabaseConfigured && (
+            <PillButton
+              label="Continue with Google"
+              leading={
+                <View style={[styles.gBadge, { backgroundColor: '#fff' }]}>
+                  <GoogleMark size={16} />
+                </View>
+              }
+              loading={busy === 'google'}
+              disabled={!!busy}
+              onPress={() => run('google', signInWithGoogle)}
+            />
           )}
+          <PillButton
+            variant={isSupabaseConfigured ? 'ghost' : 'ink'}
+            icon={isSupabaseConfigured ? undefined : 'sparkle'}
+            label="Try it without an account"
+            disabled={!!busy}
+            onPress={() => run('guest', startDemo)}
+          />
+          <Text variant="caption" tone="faint" style={{ textAlign: 'center' }}>
+            {isSupabaseConfigured
+              ? 'No account? Explore with sample data — it stays on this phone.'
+              : 'Runs with sample data on this phone. Google sign-in turns on once Supabase keys are in .env.local.'}
+          </Text>
           {!!error && (
             <Text variant="caption" tone="bad" style={{ textAlign: 'center' }}>
               {error}
