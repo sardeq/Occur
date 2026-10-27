@@ -38,6 +38,8 @@ yarn-error.*
 
 .claude
 
+.env
+
 AGENTS.md
 
 example
