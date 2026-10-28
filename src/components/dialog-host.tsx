@@ -30,7 +30,7 @@ export function DialogHost() {
             { backgroundColor: t.surface, borderColor: t.line },
             current.sheet && { marginBottom: insets.bottom + 12, width: '100%' },
           ]}>
-          <Text variant="serif" style={{ textAlign: 'center' }}>
+          <Text variant="heading" style={{ textAlign: 'center' }}>
             {current.title}
           </Text>
           {!!current.message && (

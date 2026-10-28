@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
-import { useEffect } from 'react';
-import { Platform, Pressable, StyleSheet } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Animated, {
   Easing,
   ZoomIn,
@@ -16,6 +16,7 @@ import Animated, {
 
 import { font } from '@/theme';
 import { Bubble, type BubbleProps } from './bubble';
+import { Icon } from './icon';
 
 const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
@@ -25,18 +26,42 @@ type Props = BubbleProps & {
   x: number;
   y: number;
   label: string;
+  /** how many today — the "−" button only shows when there's something to take away */
+  todayCount: number;
   onLog: () => void;
+  /** take one away (mis-tap) */
+  onRemove: () => void;
   onOpen: () => void;
   /** increments on every successful log, drives the ripple + "+1" */
   pulse: number;
+  /** increments on every removal, drives the "−1" */
+  minusPulse: number;
 };
 
+/** A drag at least this far down (and mostly vertical) counts as "take one away". */
+const SWIPE_MIN = 44;
+
 /**
- * One bubble on the home screen. Tap = log (squish, ripple, haptic, "+1").
- * Press & hold = open details. Idle bubbles float a few pixels so the screen
- * feels alive; everything respects Reduce Motion.
+ * One bubble on the home screen.
+ *  - Tap = add one (squish, ripple, haptic, "+1").
+ *  - Swipe down on it, or tap the small "−" button = take one away ("−1").
+ *  - Press & hold = open details.
+ * Idle bubbles float a few pixels so the screen feels alive; everything
+ * respects Reduce Motion.
  */
-export function TapBubble({ id, x, y, label, onLog, onOpen, pulse, ...bubble }: Props) {
+export function TapBubble({
+  id,
+  x,
+  y,
+  label,
+  todayCount,
+  onLog,
+  onRemove,
+  onOpen,
+  pulse,
+  minusPulse,
+  ...bubble
+}: Props) {
   const size = bubble.size;
   const reduce = useReducedMotion();
   const seed = hash(id);
@@ -47,6 +72,8 @@ export function TapBubble({ id, x, y, label, onLog, onOpen, pulse, ...bubble }: 
   const bob = useSharedValue(0);
   const ripple = useSharedValue(1);
   const plus = useSharedValue(1);
+  const minus = useSharedValue(1);
+  const start = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     left.set(withSpring(x - size / 2, { damping: 18, stiffness: 120 }));
@@ -81,6 +108,15 @@ export function TapBubble({ id, x, y, label, onLog, onOpen, pulse, ...bubble }: 
     );
   }, [pulse, ripple, plus]);
 
+  useEffect(() => {
+    if (minusPulse === 0) return;
+    minus.set(
+      withSequence(withTiming(0, { duration: 0 }), withTiming(1, { duration: 900, easing: Easing.out(Easing.quad) })),
+    );
+    // a little downward nudge so it feels like the count dropped
+    press.set(withSequence(withTiming(0.92, { duration: 90 }), withSpring(1, { damping: 8, stiffness: 260 })));
+  }, [minusPulse, minus, press]);
+
   const position = useAnimatedStyle(() => ({ left: left.get(), top: top.get() }));
   const motion = useAnimatedStyle(() => ({
     transform: [{ translateY: bob.get() * 3 }, { scale: press.get() }],
@@ -88,6 +124,10 @@ export function TapBubble({ id, x, y, label, onLog, onOpen, pulse, ...bubble }: 
   const rippleStyle = useAnimatedStyle(() => ({
     opacity: (1 - ripple.get()) * 0.55,
     transform: [{ scale: 1 + ripple.get() * 0.42 }],
+  }));
+  const minusStyle = useAnimatedStyle(() => ({
+    opacity: minus.get() < 0.12 ? minus.get() / 0.12 : 1 - (minus.get() - 0.12) / 0.88,
+    transform: [{ translateY: minus.get() * size * 0.32 }, { scale: 0.8 + minus.get() * 0.4 }],
   }));
   const plusStyle = useAnimatedStyle(() => ({
     opacity: plus.get() < 0.12 ? plus.get() / 0.12 : 1 - (plus.get() - 0.12) / 0.88,
@@ -109,17 +149,40 @@ export function TapBubble({ id, x, y, label, onLog, onOpen, pulse, ...bubble }: 
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={label}
-            accessibilityHint="Double tap to count it. Hold to see details and history."
-            accessibilityActions={[{ name: 'activate' }, { name: 'longpress', label: 'Open details' }]}
-            onAccessibilityAction={(e) => (e.nativeEvent.actionName === 'longpress' ? onOpen() : onLog())}
-            delayLongPress={420}
-            onPressIn={() => {
+            accessibilityHint="Double tap to add one. Swipe up or down with one finger for more options."
+            accessibilityActions={[
+              { name: 'activate', label: 'Add one' },
+              { name: 'decrement', label: 'Take one away' },
+              { name: 'increment', label: 'Add one' },
+              { name: 'longpress', label: 'Open details' },
+            ]}
+            onAccessibilityAction={(e) => {
+              const a = e.nativeEvent.actionName;
+              if (a === 'longpress') onOpen();
+              else if (a === 'decrement') {
+                if (todayCount > 0) onRemove();
+              } else onLog();
+            }}
+            delayLongPress={450}
+            // keep the press alive while the finger slides, so a swipe-down
+            // still ends in onPress (where we tell a tap from a swipe)
+            pressRetentionOffset={{ top: 200, bottom: 400, left: 200, right: 200 }}
+            onPressIn={(e: GestureResponderEvent) => {
+              start.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
               press.set(withSpring(0.9, { damping: 15, stiffness: 420 }));
             }}
             onPressOut={() => {
               press.set(withSpring(1, { damping: 7, stiffness: 260 }));
             }}
-            onPress={() => {
+            onPress={(e: GestureResponderEvent) => {
+              const s0 = start.current;
+              const dx = s0 ? e.nativeEvent.pageX - s0.x : 0;
+              const dy = s0 ? e.nativeEvent.pageY - s0.y : 0;
+              if (dy > SWIPE_MIN && Math.abs(dy) > Math.abs(dx) * 1.3) {
+                if (todayCount > 0) onRemove();
+                return;
+              }
+              if (Math.hypot(dx, dy) > SWIPE_MIN) return; // some other drag — ignore, don't count
               if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
               onLog();
             }}
@@ -134,6 +197,34 @@ export function TapBubble({ id, x, y, label, onLog, onOpen, pulse, ...bubble }: 
             style={[styles.plus, { color: bubble.swatch.deep, top: -size * 0.02, width: size }, plusStyle]}>
             +1
           </Animated.Text>
+          <Animated.Text
+            pointerEvents="none"
+            style={[styles.plus, { color: bubble.swatch.deep, top: size * 0.62, width: size }, minusStyle]}>
+            −1
+          </Animated.Text>
+          {todayCount > 0 && (
+            <View
+              style={[
+                styles.minusWrap,
+                { left: size / 2 + (size / 2 + 2) * 0.7071 - 20, top: size / 2 + (size / 2 + 2) * 0.7071 - 20 },
+              ]}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Take one ${bubble.name ?? ''} away`}
+                hitSlop={8}
+                onPress={onRemove}
+                style={({ pressed }) => [
+                  styles.minus,
+                  {
+                    backgroundColor: '#FFFFFF',
+                    borderColor: bubble.swatch.deep,
+                    transform: [{ scale: pressed ? 0.9 : 1 }],
+                  },
+                ]}>
+                <Icon name="minus" size={20} color="#1A1712" strokeWidth={3} />
+              </Pressable>
+            </View>
+          )}
         </Animated.View>
       </Animated.View>
     </Animated.View>
@@ -142,11 +233,25 @@ export function TapBubble({ id, x, y, label, onLog, onOpen, pulse, ...bubble }: 
 
 const styles = StyleSheet.create({
   abs: { position: 'absolute' },
+  minusWrap: { position: 'absolute', width: 40, height: 40 },
+  minus: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
   plus: {
     position: 'absolute',
     left: 0,
     textAlign: 'center',
-    fontFamily: font.serif,
-    fontSize: 30,
+    fontFamily: font.display,
+    fontSize: 28,
   },
 });

@@ -6,14 +6,14 @@ import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Bubble } from '@/components/bubble';
-import { Chip, PillButton, RoundButton } from '@/components/buttons';
+import { Chip, NavButton, PillButton } from '@/components/buttons';
 import { Bars, ClockChart, Heatmap } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
 import { argmax, gaps, hourHistogram, inRange, periodStats, streaks, typicalHour, weekdayHistogram } from '@/lib/stats';
 import { showActionSheet } from '@/lib/dialog';
-import { deleteEvent, logEvent, useData } from '@/lib/store';
+import { deleteEvent, logEvent, removeLatestToday, useData } from '@/lib/store';
 import {
   DAY,
   MONTHS_SHORT,
@@ -44,9 +44,9 @@ function deltaTone(goal: Goal, diff: number, t: Theme): string {
 function Since({ last, suffix }: { last: Date; suffix?: string }) {
   const now = useNow(1000);
   return (
-    <Text variant="display" style={{ fontSize: 48, lineHeight: 54 }}>
+    <Text variant="display" style={{ fontSize: 40, lineHeight: 48 }}>
       {formatDuration(now.getTime() - last.getTime())}
-      {suffix ? <Text variant="serifItalic" tone="soft" style={{ fontSize: 28 }}>{` ${suffix}`}</Text> : null}
+      {suffix ? <Text variant="subheading" tone="soft" style={{ fontSize: 24 }}>{` ${suffix}`}</Text> : null}
     </Text>
   );
 }
@@ -70,7 +70,9 @@ function StatCard({
       <Text variant="eyebrow" tone="faint">
         {label}
       </Text>
-      <Text style={{ fontFamily: font.serif, fontSize: 38, lineHeight: 42, color: t.ink, marginTop: 4 }}>{value}</Text>
+      <Text style={{ fontFamily: font.display, fontSize: 32, lineHeight: 40, color: t.ink, marginTop: 4 }}>
+        {value}
+      </Text>
       {!!delta && (
         <Text variant="caption" color={color} numberOfLines={1}>
           {delta}
@@ -151,6 +153,12 @@ export default function CategoryScreen() {
     logEvent(cat.id);
   };
 
+  const removeOne = () => {
+    const e = removeLatestToday(cat.id, new Date());
+    if (!e) return;
+    if (Platform.OS !== 'web') void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+  };
+
   const onEvent = (e: OccurEvent) => {
     const d = new Date(e.occurredAt);
     const title = `${formatDate(d, now)} at ${formatTime(d)}`;
@@ -174,12 +182,12 @@ export default function CategoryScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={[styles.topbar, { paddingTop: insets.top + 6 }]}>
-        <RoundButton icon="back" label="Back" onPress={() => router.back()} size={42} />
-        <RoundButton
+        <NavButton icon="back" label="Back" accessibilityLabel="Back to home" onPress={() => router.back()} />
+        <NavButton
           icon="pencil"
-          label={`Edit ${cat.name}`}
+          label="Edit"
+          accessibilityLabel={`Edit ${cat.name}`}
           onPress={() => router.push({ pathname: '/edit-category', params: { id: cat.id } })}
-          size={42}
         />
       </View>
 
@@ -190,7 +198,7 @@ export default function CategoryScreen() {
             <Bubble size={92} swatch={sw} emoji={cat.emoji} />
           </Pressable>
           <View style={{ flex: 1 }}>
-            <Text variant="title" style={{ fontSize: 40, lineHeight: 44 }} numberOfLines={2}>
+            <Text variant="title" style={{ fontSize: 34, lineHeight: 40 }} numberOfLines={2}>
               {cat.name}
             </Text>
             <View style={[styles.row, { gap: 8, marginTop: 6 }]}>
@@ -230,20 +238,28 @@ export default function CategoryScreen() {
               </Text>
             </>
           ) : (
-            <Text variant="serif" style={{ marginTop: 6 }}>
-              Nothing yet. Tap “Log now” the next time it happens.
+            <Text variant="heading" style={{ marginTop: 6 }}>
+              Nothing yet. Tap “Add one” the next time it happens.
             </Text>
           )}
           <View style={[styles.row, { gap: 10, marginTop: 16 }]}>
-            <PillButton label="Log now" icon="plus" onPress={logNow} style={{ flex: 1, height: 50 }} />
+            <PillButton label="Add one" icon="plus" onPress={logNow} style={{ flex: 1, height: 54 }} />
             <PillButton
               label="Earlier…"
               icon="clock"
               variant="ghost"
               onPress={() => router.push({ pathname: '/log-time', params: { categoryId: cat.id } })}
-              style={{ height: 50 }}
+              style={{ height: 54 }}
             />
           </View>
+          <PillButton
+            label={stats.today > 0 ? `Take one away (today: ${stats.today})` : 'Nothing to take away today'}
+            icon="minus"
+            variant="ghost"
+            disabled={stats.today === 0}
+            onPress={removeOne}
+            style={{ height: 50, marginTop: 10 }}
+          />
         </View>
 
         {/* numbers */}
@@ -290,7 +306,7 @@ export default function CategoryScreen() {
         {/* when */}
         <View style={styles.section}>
           <View style={[styles.row, { justifyContent: 'space-between' }]}>
-            <Text variant="serif">When it happens</Text>
+            <Text variant="heading">When it happens</Text>
           </View>
           <View style={[styles.row, { gap: 8, marginTop: 12 }]}>
             {RANGES.map((r) => (
@@ -314,7 +330,7 @@ export default function CategoryScreen() {
                   <Text variant="eyebrow" tone="faint">
                     usually
                   </Text>
-                  <Text style={{ fontFamily: font.serif, fontSize: 30, lineHeight: 34, color: t.ink }}>
+                  <Text style={{ fontFamily: font.display, fontSize: 30, lineHeight: 34, color: t.ink }}>
                     {formatHour(usual)}
                   </Text>
                 </>
@@ -351,7 +367,7 @@ export default function CategoryScreen() {
 
         {/* calendar */}
         <View style={styles.section}>
-          <Text variant="serif">Every day, lately</Text>
+          <Text variant="heading">Every day, lately</Text>
           <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line, padding: 16, marginTop: 12 }]}>
             <Heatmap events={events} swatch={sw} now={now} />
           </View>
@@ -360,7 +376,7 @@ export default function CategoryScreen() {
         {/* history */}
         <View style={styles.section}>
           <View style={[styles.row, { justifyContent: 'space-between' }]}>
-            <Text variant="serif">History</Text>
+            <Text variant="heading">History</Text>
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push({ pathname: '/ask', params: { about: cat.name } })}

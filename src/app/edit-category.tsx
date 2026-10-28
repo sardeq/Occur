@@ -13,7 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Bubble } from '@/components/bubble';
-import { Chip, PillButton, RoundButton, tapHaptic } from '@/components/buttons';
+import { Chip, NavButton, PillButton, tapHaptic } from '@/components/buttons';
 import { Text } from '@/components/text';
 import { showDialog } from '@/lib/dialog';
 import { requestLocationPermission } from '@/lib/location';
@@ -121,14 +121,18 @@ export default function EditCategory() {
       style={{ flex: 1, backgroundColor: t.bg }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.topbar, { paddingTop: Platform.OS === 'ios' ? 14 : insets.top + 8 }]}>
-        <RoundButton icon="close" label="Close" onPress={() => router.back()} size={40} />
-        <Text variant="label" tone="soft">
-          {editing ? 'Edit bubble' : 'New bubble'}
-        </Text>
+        <NavButton icon="close" label="Cancel" onPress={() => router.back()} />
         {editing ? (
-          <RoundButton icon="trash" label="Delete" onPress={confirmDelete} size={40} />
+          <NavButton
+            icon="trash"
+            label="Delete"
+            accessibilityLabel={`Delete ${existing.name}`}
+            onPress={confirmDelete}
+          />
         ) : (
-          <View style={{ width: 40 }} />
+          <Text variant="label" tone="soft">
+            New bubble
+          </Text>
         )}
       </View>
 
@@ -331,8 +335,8 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: 20, marginTop: 22 },
   eyebrow: { marginBottom: 10, marginLeft: 4 },
   input: {
-    fontFamily: font.serif,
-    fontSize: 32,
+    fontFamily: font.display,
+    fontSize: 28,
     textAlign: 'center',
     borderBottomWidth: 1.5,
     paddingVertical: 10,

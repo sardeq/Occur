@@ -187,3 +187,121 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
 });
+
+/**
+ * A labelled navigation button ("‹ Back", "✕ Close", "Done"). Words next to
+ * the icon so nobody has to guess what a bare symbol does.
+ */
+export function NavButton({
+  label,
+  icon,
+  onPress,
+  accessibilityLabel,
+  variant = 'surface',
+}: {
+  label: string;
+  icon?: IconName;
+  onPress: () => void;
+  accessibilityLabel?: string;
+  variant?: 'surface' | 'ink';
+}) {
+  const t = useTheme();
+  const fg = variant === 'ink' ? t.pillInk : t.ink;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      hitSlop={10}
+      onPress={() => {
+        tapHaptic();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        navStyles.nav,
+        variant === 'ink'
+          ? { backgroundColor: t.pill }
+          : { backgroundColor: t.surface, borderWidth: StyleSheet.hairlineWidth * 2, borderColor: t.lineStrong },
+        { opacity: pressed ? 0.8 : 1, transform: [{ scale: pressed ? 0.97 : 1 }] },
+      ]}>
+      {icon && <Icon name={icon} size={20} color={fg} strokeWidth={2.3} />}
+      <Text style={{ fontFamily: font.semibold, fontSize: 17, color: fg }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/** Big, obvious segmented control (Settings → Appearance etc.). */
+export function Segmented<K extends string>({
+  options,
+  value,
+  onChange,
+  accessibilityLabel,
+}: {
+  options: { key: K; label: string; icon?: IconName }[];
+  value: K;
+  onChange: (k: K) => void;
+  accessibilityLabel?: string;
+}) {
+  const t = useTheme();
+  return (
+    <View
+      accessibilityRole="radiogroup"
+      accessibilityLabel={accessibilityLabel}
+      style={[navStyles.seg, { backgroundColor: t.surfaceAlt }]}>
+      {options.map((o) => {
+        const on = o.key === value;
+        return (
+          <Pressable
+            key={o.key}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: on }}
+            accessibilityLabel={o.label}
+            onPress={() => {
+              tapHaptic();
+              onChange(o.key);
+            }}
+            style={[
+              navStyles.segItem,
+              on && {
+                backgroundColor: t.surface,
+                shadowColor: t.shadow,
+                shadowOpacity: 0.14,
+                shadowRadius: 6,
+                shadowOffset: { width: 0, height: 2 },
+              },
+            ]}>
+            {o.icon && <Icon name={o.icon} size={18} color={on ? t.ink : t.inkSoft} />}
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              style={{ fontFamily: on ? font.bold : font.medium, fontSize: 16, color: on ? t.ink : t.inkSoft }}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+const navStyles = StyleSheet.create({
+  nav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 46,
+    paddingLeft: 12,
+    paddingRight: 18,
+    borderRadius: radius.pill,
+  },
+  seg: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4 },
+  segItem: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 5,
+    height: 46,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

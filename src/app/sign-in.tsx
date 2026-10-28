@@ -142,16 +142,16 @@ export default function SignIn() {
           </Text>
           <Text
             style={{
-              fontFamily: font.serif,
-              fontSize: 76,
-              lineHeight: 80,
+              fontFamily: font.display,
+              fontSize: 64,
+              lineHeight: 74,
               color: t.ink,
               marginTop: 6,
               letterSpacing: -1.5,
             }}>
             Occur
           </Text>
-          <Text variant="serifItalic" tone="soft" style={{ fontSize: 24, lineHeight: 28 }}>
+          <Text variant="subheading" tone="soft" style={{ fontSize: 24, lineHeight: 28 }}>
             Click. Click. Done.
           </Text>
           <Text variant="body" tone="soft" style={{ marginTop: 12, maxWidth: 340 }}>

@@ -57,25 +57,29 @@ Everything the app uses ships in Expo Go (SDK 58), so no custom native build is 
 
 - **Bubbles that are also clocks.** Each bubble shows today’s count, and its rim is a 24‑hour dial (midnight at the top) with a dot for every time you logged it today plus a faint “now” hand. The home screen answers *how many* **and** *when* without opening anything.
 - **Frequent things are bigger and central.** Bubbles are circle‑packed; size comes from the last 14 days of use. That weight deliberately **excludes today**, so bubbles never grow or move under your finger while you tap. The layout settles once a day.
-- **Tap = log, hold = details.** A tap gives a haptic, a squish, a ripple and a floating “+1”, and shows an **Undo** toast, because mis‑taps are the price of one‑tap logging.
-- **First run is almost empty.** It shows one dashed bubble asking *“What would you like to count?”*, with starter ideas slowly orbiting it. One tap on an idea creates it.
+- **Tap = add one, hold = details.** A tap gives a haptic, a squish, a ripple and a floating “+1”, and shows a big **Undo** bar for 8 seconds.
+- **Mistakes are one gesture away.** Every bubble with a count today has a **−** button on its rim, and a swipe down on the bubble also takes one away (“−1”, with Undo). The detail screen has a *Take one away* button too.
+- **Two home styles.** Bubbles (default) or a plain **List** with big − / + buttons per row, switchable in Settings — for people who prefer buttons over gestures.
+- **Nothing hidden.** Header buttons carry text labels (Insights, Settings), every screen has a labelled *Back* / *Close* / *Cancel*, pushed screens swipe back from anywhere, and a short tips card explains tap / − / hold until you’ve logged a few dozen entries.
+- **Ideas never disappear.** First run shows a still grid of starter ideas (one tap each) plus *Make my own*. Afterwards the **+** opens the same grid (tap several, tap again to take one off), and while you have fewer than four bubbles a *More ideas* strip stays on the home screen.
 - **A goal per bubble: just count / do more / do less.** More coffee isn’t “good” and more reading isn’t “bad”, so comparisons are coloured by the goal. “Do less” bubbles show a live *time since the last one* and the longest break instead of a streak.
 - **Fair comparisons.** “This week vs last week” on a Monday morning compares against *last Monday morning*, not a whole week, everywhere in the app.
 - **Back‑dating and fixing.** *Earlier…* logs something that already happened (with presets like “1 hour ago”). Tapping any time in the history lets you move or delete that entry.
-- **Look and feel:** warm paper, black ink pills, soft 3D gradient bubbles, an editorial serif (Instrument Serif) for numbers and Manrope for UI. Light and dark themes, Liquid Glass on iOS 26 for the + button, and Reduce Motion is respected.
+- **Look and feel:** warm paper, black ink pills, soft 3D gradient bubbles, one rounded, highly legible family (Nunito) with large default text sizes. Light / Dark / Automatic chosen in Settings, Liquid Glass on iOS 26 for the + button, and Reduce Motion is respected.
 
 ### Screens
 
 | Screen | What’s on it |
 |---|---|
 | Sign in | Google (Supabase OAuth in the iOS auth sheet), or try it without an account (local demo with sample data) |
-| Home | Bubble field, today’s total, Ask bar, + bubble, undo toast, sync indicator |
+| Home | Bubble field (or list), today’s total, tips, − buttons, Ask bar, + button, undo bar, sync indicator |
+| Add | Grid of one-tap ideas, *Make my own*, Done |
 | Bubble detail | Live time since last, today/week/month with fair deltas, all‑time, per‑day, streak or best break, 24h radial “when” chart, weekday bars, 15‑week calendar heatmap, full history grouped by day |
 | New / edit bubble | Live preview, name, suggestions, emoji grid (or any emoji), colour, goal, “remember where” |
 | Log earlier | Quick presets + date/time picker; also used to move an existing entry |
 | Ask | Chat‑style questions with answer cards: headline number, sentence, mini chart, and chips showing how the question was understood |
 | Insights | Week at a glance: today as a timeline, a category × weekday table, comparisons with last week, daily rhythm |
-| You | Account, sync status, CSV export, delete all data, sign out / leave demo |
+| Settings | Account, appearance (Automatic / Light / Dark), home style (Bubbles / List), sync status, CSV export, delete all data, sign out / leave demo |
 
 ---
 
@@ -161,17 +165,19 @@ The model **translates the question; it never answers it.**
 src/
   app/                    expo-router screens
     _layout.tsx           fonts, auth guard (Stack.Protected), data wiring
-    index.tsx             home: bubble field, ask bar, undo
+    index.tsx             home: bubble field or list, ask bar, undo
+    add.tsx               one-tap ideas grid
     category/[id].tsx     detail, charts, history
     edit-category.tsx     create / edit / delete
     log-time.tsx          back-date or move an entry (form sheet)
     ask.tsx               natural-language questions
     insights.tsx          week overview
-    settings.tsx          account, sync, export, delete
+    settings.tsx          account, appearance, home style, sync, export, delete
     sign-in.tsx
   components/             Bubble (SVG clock bubble), TapBubble (gestures + animation), charts, buttons, icons
   lib/
     store.ts              local-first store + sync engine
+    prefs.ts              device preferences (theme, home style)
     auth.ts               Google OAuth (PKCE) and the local demo mode
     stats.ts / time.ts    pure date & statistics helpers
     packing.ts            circle packing for the home screen

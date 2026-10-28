@@ -12,6 +12,10 @@ export const SUGGESTIONS: CategoryInput[] = [
   { name: 'Eating out', emoji: '🍜', color: 'lime', goal: 'track', trackLocation: true },
   { name: 'Alcohol', emoji: '🍷', color: 'rose', goal: 'less', trackLocation: false },
   { name: 'Meditation', emoji: '🧘', color: 'lilac', goal: 'more', trackLocation: false },
+  { name: 'Tea', emoji: '🍵', color: 'mint', goal: 'track', trackLocation: false },
+  { name: 'Walk', emoji: '🚶', color: 'lime', goal: 'more', trackLocation: false },
+  { name: 'Snack', emoji: '🍫', color: 'sand', goal: 'less', trackLocation: false },
+  { name: 'Nap', emoji: '😴', color: 'sky', goal: 'track', trackLocation: false },
 ];
 
 // prettier-ignore

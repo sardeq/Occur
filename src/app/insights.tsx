@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { RoundButton } from '@/components/buttons';
+import { NavButton } from '@/components/buttons';
 import { Bars, DayStrip } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
@@ -80,17 +80,17 @@ export default function Insights() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={[styles.topbar, { paddingTop: insets.top + 6 }]}>
-        <RoundButton icon="back" label="Back" onPress={() => router.back()} size={42} />
+        <NavButton icon="back" label="Back" accessibilityLabel="Back to home" onPress={() => router.back()} />
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
         <View style={{ paddingHorizontal: 20 }}>
           <Text variant="eyebrow" tone="soft">
             This week
           </Text>
-          <Text style={{ fontFamily: font.serif, fontSize: 64, lineHeight: 68, color: t.ink, marginTop: 4 }}>
+          <Text style={{ fontFamily: font.display, fontSize: 60, lineHeight: 70, color: t.ink, marginTop: 4 }}>
             {data.total}
           </Text>
-          <Text variant="serif" tone="soft">
+          <Text variant="heading" tone="soft">
             {data.total === 1 ? 'moment' : 'moments'} so far
             {pct !== null && data.prevTotal > 0
               ? ` — ${pct === 0 ? 'same as' : `${Math.abs(pct)}% ${pct > 0 ? 'more than' : 'fewer than'}`} this point last week`
@@ -186,7 +186,7 @@ export default function Insights() {
         {/* trends */}
         {data.rows.length > 0 && (
           <View style={{ paddingHorizontal: 16, marginTop: 26 }}>
-            <Text variant="serif">Compared with last week</Text>
+            <Text variant="heading">Compared with last week</Text>
             <Text variant="caption" tone="faint" style={{ marginTop: 2 }}>
               Same point in the week, so Monday isn’t compared with a whole week. Green follows each bubble’s goal.
             </Text>
@@ -214,7 +214,7 @@ export default function Insights() {
           <Text variant="label" tone="soft">
             Your daily rhythm · last 30 days
           </Text>
-          <Text variant="serif" style={{ marginTop: 6 }}>
+          <Text variant="heading" style={{ marginTop: 6 }}>
             {data.last30Count ? `Busiest around ${formatHour(busiest)}` : 'Not enough data yet'}
           </Text>
           <View style={{ marginTop: 12 }}>
@@ -233,7 +233,7 @@ export default function Insights() {
           onPress={() => router.push('/ask')}
           style={[styles.card, styles.row, { backgroundColor: t.pill, borderColor: t.pill, gap: 10 }]}>
           <Icon name="sparkle" size={18} color={t.pillInk} />
-          <Text style={{ fontFamily: font.serifItalic, fontSize: 20, color: t.pillInk, flex: 1 }}>
+          <Text style={{ fontFamily: font.displaySoft, fontSize: 18, color: t.pillInk, flex: 1 }}>
             Ask something specific…
           </Text>
           <Icon name="chevron" size={18} color={t.pillInk} />

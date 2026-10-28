@@ -4,6 +4,7 @@ import Svg, { Circle, Defs, Ellipse, Line, RadialGradient, Stop } from 'react-na
 
 import { font } from '@/theme';
 import { alpha, type Swatch } from '@/theme/palette';
+import { Icon } from './icon';
 import { Text } from './text';
 
 export type BubbleProps = {
@@ -48,8 +49,8 @@ export function Bubble({ size, swatch, emoji, name, count, dots, nowHour, dimCou
   }
 
   const emojiSize = size * (name ? 0.17 : 0.3);
-  const countSize = size * 0.3;
-  const nameSize = Math.max(10.5, size * 0.088);
+  const countSize = size * 0.28;
+  const nameSize = Math.max(12, size * 0.09);
 
   return (
     <View
@@ -132,13 +133,17 @@ export function Bubble({ size, swatch, emoji, name, count, dots, nowHour, dimCou
         {!!emoji && <Text style={{ fontSize: emojiSize, lineHeight: emojiSize * 1.18 }}>{emoji}</Text>}
         {count !== undefined && (
           <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
             style={{
-              fontFamily: font.serif,
+              maxWidth: size * 0.72,
+              textAlign: 'center',
+              fontFamily: font.display,
               fontSize: countSize,
-              lineHeight: countSize * 1.02,
+              lineHeight: countSize * 1.18,
               color: ink,
               opacity: dimCount ? 0.38 : 1,
-              marginTop: -size * 0.01,
+              marginTop: -size * 0.02,
             }}>
             {count}
           </Text>
@@ -150,8 +155,8 @@ export function Bubble({ size, swatch, emoji, name, count, dots, nowHour, dimCou
               fontFamily: font.bold,
               fontSize: nameSize,
               color: ink,
-              opacity: 0.82,
-              maxWidth: size * 0.7,
+              opacity: 0.9,
+              maxWidth: size * 0.74,
               textAlign: 'center',
             }}>
             {name}
@@ -172,21 +177,22 @@ export function AddBubble({ size, color, label }: { size: number; color: string;
           cx={r}
           cy={r}
           r={r - 1.5}
-          stroke={alpha(color, 0.45)}
-          strokeWidth={1.6}
-          strokeDasharray={[5, 7]}
+          stroke={alpha(color, 0.6)}
+          strokeWidth={2}
+          strokeDasharray={[6, 6]}
           strokeLinecap="round"
-          fill={alpha(color, 0.03)}
+          fill={alpha(color, 0.06)}
         />
       </Svg>
-      <Text style={{ fontFamily: font.serif, fontSize: size * 0.34, lineHeight: size * 0.38, color }}>+</Text>
+      <Icon name="plus" size={size * (label ? 0.3 : 0.36)} color={color} strokeWidth={2.4} />
       {!!label && (
         <Text
           style={{
-            fontFamily: font.semibold,
-            fontSize: Math.max(11, size * 0.085),
+            fontFamily: font.bold,
+            fontSize: Math.max(13, size * 0.11),
+            lineHeight: Math.max(17, size * 0.14),
             color,
-            opacity: 0.7,
+            marginTop: 2,
             textAlign: 'center',
             maxWidth: size * 0.72,
           }}>

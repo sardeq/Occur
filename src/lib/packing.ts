@@ -74,7 +74,8 @@ export function pack(
 
 /** Radius for a bubble from its usage weight, relative to the busiest one. */
 export function radiusFor(weight: number, maxWeight: number, width: number, count: number): number {
-  const crowd = count > 7 ? Math.max(0.62, Math.sqrt(7 / count)) : 1;
+  // few bubbles → bigger targets; many → shrink so they all fit
+  const crowd = count > 7 ? Math.max(0.62, Math.sqrt(7 / count)) : count <= 3 ? 1.15 : 1;
   const rMax = width * 0.215 * crowd;
   const rMin = width * 0.125 * crowd;
   if (maxWeight <= 0) return (rMax + rMin) / 2;

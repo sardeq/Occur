@@ -1,20 +1,21 @@
-import { InstrumentSerif_400Regular, InstrumentSerif_400Regular_Italic } from '@expo-google-fonts/instrument-serif';
 import {
-  Manrope_400Regular,
-  Manrope_500Medium,
-  Manrope_600SemiBold,
-  Manrope_700Bold,
-  Manrope_800ExtraBold,
-} from '@expo-google-fonts/manrope';
+  Nunito_400Regular,
+  Nunito_600SemiBold,
+  Nunito_700Bold,
+  Nunito_800ExtraBold,
+  Nunito_900Black,
+} from '@expo-google-fonts/nunito';
 import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { Appearance } from 'react-native';
 
 import { DialogHost } from '@/components/dialog-host';
 import { bootAuth, useAuth } from '@/lib/auth';
 import { demoSeed } from '@/lib/demo';
+import { usePrefs } from '@/lib/prefs';
 import { initData, resetData } from '@/lib/store';
 import { useTheme } from '@/theme';
 
@@ -25,14 +26,20 @@ export default function RootLayout() {
   const status = useAuth((s) => s.status);
   const userId = useAuth((s) => s.user?.id);
   const [fontsLoaded, fontError] = useFonts({
-    InstrumentSerif_400Regular,
-    InstrumentSerif_400Regular_Italic,
-    Manrope_400Regular,
-    Manrope_500Medium,
-    Manrope_600SemiBold,
-    Manrope_700Bold,
-    Manrope_800ExtraBold,
+    Nunito_400Regular,
+    Nunito_600SemiBold,
+    Nunito_700Bold,
+    Nunito_800ExtraBold,
+    Nunito_900Black,
   });
+  const themePref = usePrefs((s) => s.theme);
+
+  // Keep native UI (sheets, pickers, alerts, switches) in step with Settings → Appearance.
+  useEffect(() => {
+    try {
+      Appearance.setColorScheme(themePref === 'system' ? 'auto' : themePref);
+    } catch {}
+  }, [themePref]);
 
   useEffect(() => {
     void bootAuth();
@@ -58,14 +65,22 @@ export default function RootLayout() {
     <ThemeProvider
       value={{ ...nav, colors: { ...nav.colors, background: t.bg, card: t.bg, text: t.ink, primary: t.ink } }}>
       <StatusBar style={t.scheme === 'dark' ? 'light' : 'dark'} />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: t.bg },
+          // swipe right from anywhere on the screen (not just the edge) to go back
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
+        }}>
         <Stack.Protected guard={authed} redirectTo="/sign-in">
           <Stack.Screen name="index" />
           <Stack.Screen name="category/[id]" />
           <Stack.Screen name="insights" />
+          <Stack.Screen name="add" />
           <Stack.Screen name="edit-category" options={{ presentation: 'modal' }} />
           <Stack.Screen name="ask" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="settings" />
           <Stack.Screen
             name="log-time"
             options={{

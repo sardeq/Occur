@@ -288,6 +288,32 @@ export function deleteEvent(id: string) {
   enqueue({ kind: 'deleteEvent', id });
 }
 
+/**
+ * "Oops, take one away": removes the most recent entry for this category
+ * logged today. Returns it so the UI can offer Undo, or null if there was none.
+ */
+export function removeLatestToday(categoryId: string, now: Date = new Date()): OccurEvent | null {
+  const d0 = new Date(now);
+  d0.setHours(0, 0, 0, 0);
+  const from = d0.getTime();
+  const list = get().events;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const e = list[i];
+    if (Date.parse(e.occurredAt) < from) break;
+    if (e.categoryId !== categoryId) continue;
+    deleteEvent(e.id);
+    return e;
+  }
+  return null;
+}
+
+/** Puts back an entry that was just removed (Undo), with its original id, time and place. */
+export function restoreEvent(e: OccurEvent) {
+  if (get().events.some((x) => x.id === e.id)) return;
+  set((s) => ({ events: insertSorted(s.events, e) }));
+  enqueue({ kind: 'upsertEvent', id: e.id, row: toEventRow(e) });
+}
+
 /** Deletes every category (and, by cascade, every event) for this user. */
 export function deleteAllData() {
   const ids = get().categories.map((c) => c.id);

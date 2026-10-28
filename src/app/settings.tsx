@@ -5,10 +5,11 @@ import { Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/icon';
-import { PillButton, RoundButton } from '@/components/buttons';
+import { NavButton, PillButton, Segmented } from '@/components/buttons';
 import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
 import { signOut, useAuth } from '@/lib/auth';
+import { setPref, usePrefs } from '@/lib/prefs';
 import { showDialog } from '@/lib/dialog';
 import { deleteAllData, resetData, sync, useData, wipeLocalCache } from '@/lib/store';
 import { formatRelative } from '@/lib/time';
@@ -67,6 +68,8 @@ export default function Settings() {
   const lastSyncedAt = useData((s) => s.lastSyncedAt);
   const syncError = useData((s) => s.syncError);
   const demo = status === 'demo';
+  const themePref = usePrefs((s) => s.theme);
+  const homeStyle = usePrefs((s) => s.homeStyle);
 
   const exportCsv = async () => {
     const names = new Map(categories.map((c) => [c.id, c]));
@@ -147,25 +150,60 @@ export default function Settings() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <View style={[styles.topbar, { paddingTop: Platform.OS === 'ios' ? 14 : insets.top + 8 }]}>
-        <Text variant="title">You</Text>
-        <RoundButton icon="close" label="Close" onPress={() => router.back()} size={40} />
+      <View style={[styles.topbar, { paddingTop: insets.top + 8 }]}>
+        <NavButton icon="back" label="Back" accessibilityLabel="Back to home" onPress={() => router.back()} />
       </View>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 14 }}>
+        <Text variant="title" style={{ marginLeft: 4 }}>
+          Settings
+        </Text>
         <View style={[styles.card, styles.profile, { backgroundColor: t.surface, borderColor: t.line }]}>
           <View style={[styles.avatar, { backgroundColor: t.surfaceAlt }]}>
             {user?.avatarUrl ? (
               <Image source={{ uri: user.avatarUrl }} style={{ width: 56, height: 56 }} />
             ) : (
-              <Text style={{ fontFamily: font.serif, fontSize: 28, color: t.ink }}>{displayName.charAt(0)}</Text>
+              <Text style={{ fontFamily: font.display, fontSize: 26, color: t.ink }}>{displayName.charAt(0)}</Text>
             )}
           </View>
           <View style={{ flex: 1 }}>
-            <Text variant="serif">{displayName}</Text>
+            <Text variant="heading">{displayName}</Text>
             <Text variant="caption" tone="soft">
               {demo ? 'Sample data, no account' : (user?.email ?? '')}
             </Text>
           </View>
+        </View>
+
+        <View style={[styles.card, styles.prefCard, { backgroundColor: t.surface, borderColor: t.line }]}>
+          <Text variant="bodyStrong">Appearance</Text>
+          <Text variant="caption" tone="soft">
+            Light or dark colours. “Automatic” follows your phone.
+          </Text>
+          <Segmented
+            accessibilityLabel="Appearance"
+            value={themePref}
+            onChange={(v) => setPref('theme', v)}
+            options={[
+              { key: 'system', label: 'Automatic', icon: 'phone' },
+              { key: 'light', label: 'Light', icon: 'sun' },
+              { key: 'dark', label: 'Dark', icon: 'moon' },
+            ]}
+          />
+        </View>
+
+        <View style={[styles.card, styles.prefCard, { backgroundColor: t.surface, borderColor: t.line }]}>
+          <Text variant="bodyStrong">Home screen</Text>
+          <Text variant="caption" tone="soft">
+            Bubbles, or a simple list with big + and − buttons.
+          </Text>
+          <Segmented
+            accessibilityLabel="Home screen style"
+            value={homeStyle}
+            onChange={(v) => setPref('homeStyle', v)}
+            options={[
+              { key: 'bubbles', label: 'Bubbles', icon: 'bubbles' },
+              { key: 'list', label: 'List', icon: 'list' },
+            ]}
+          />
         </View>
 
         <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line }]}>
@@ -216,10 +254,10 @@ const styles = StyleSheet.create({
   topbar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 6,
   },
+  prefCard: { padding: 16, gap: 10 },
   card: { borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
   profile: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
   avatar: {

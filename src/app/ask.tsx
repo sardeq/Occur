@@ -13,7 +13,7 @@ import {
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { RoundButton, tapHaptic } from '@/components/buttons';
+import { NavButton, RoundButton, tapHaptic } from '@/components/buttons';
 import { Bars } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
@@ -35,9 +35,9 @@ function AnswerCard({ a }: { a: Answer }) {
       style={[styles.answer, { backgroundColor: t.surface, borderColor: t.line }]}>
       <Text
         style={{
-          fontFamily: font.serif,
-          fontSize: a.headline.length > 12 ? 32 : 46,
-          lineHeight: a.headline.length > 12 ? 36 : 50,
+          fontFamily: font.display,
+          fontSize: a.headline.length > 12 ? 28 : 42,
+          lineHeight: a.headline.length > 12 ? 34 : 50,
           color: t.ink,
         }}>
         {a.headline}
@@ -89,7 +89,7 @@ function Thinking() {
       entering={FadeIn}
       style={[styles.answer, styles.row, { backgroundColor: t.surface, borderColor: t.line, gap: 8 }]}>
       <Icon name="sparkle" size={16} color={t.inkSoft} />
-      <Text variant="serifItalic" tone="soft">
+      <Text variant="subheading" tone="soft">
         Looking through your log…
       </Text>
     </Animated.View>
@@ -155,7 +155,7 @@ export default function Ask() {
           </Text>
           <Text variant="title">Your history</Text>
         </View>
-        <RoundButton icon="close" label="Close" onPress={() => router.back()} size={40} />
+        <NavButton icon="close" label="Close" onPress={() => router.back()} />
       </View>
 
       <ScrollView
@@ -164,7 +164,7 @@ export default function Ask() {
         keyboardShouldPersistTaps="handled">
         {turns.length === 0 && (
           <Animated.View entering={FadeInDown.duration(400)}>
-            <Text variant="serif" style={{ fontSize: 26, lineHeight: 31 }}>
+            <Text variant="heading" style={{ fontSize: 26, lineHeight: 31 }}>
               {categories.length
                 ? 'Ask in your own words — how many, when, how often, compared to when.'
                 : 'Add a bubble and log a few things first, then ask me about them.'}

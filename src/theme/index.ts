@@ -1,9 +1,11 @@
 import { useColorScheme } from 'react-native';
 
+import { usePrefs } from '@/lib/prefs';
+
 /**
- * Occur's look: warm paper, black ink, soft gradient bubbles. An editorial
- * serif (Instrument Serif) for numbers and headlines; a friendly grotesque
- * (Manrope) for UI text.
+ * Occur's look: warm paper, black ink, soft gradient bubbles. One rounded,
+ * very readable family (Nunito) everywhere — heavy weights for numbers and
+ * headlines, regular weights for UI text — so it stays legible at a glance.
  */
 
 const light = {
@@ -13,8 +15,8 @@ const light = {
   surface: '#FBF8F2',
   surfaceAlt: '#ECE5D9',
   ink: '#18150F',
-  inkSoft: '#5F584D',
-  inkFaint: '#9C9488',
+  inkSoft: '#4F493F',
+  inkFaint: '#7A7266',
   line: 'rgba(24, 21, 15, 0.09)',
   lineStrong: 'rgba(24, 21, 15, 0.18)',
   /** the black pill */
@@ -33,8 +35,8 @@ const dark: typeof light = {
   surface: '#1D1A16',
   surfaceAlt: '#29251F',
   ink: '#F5EFE4',
-  inkSoft: '#B9AF9F',
-  inkFaint: '#7B7367',
+  inkSoft: '#C4BAAA',
+  inkFaint: '#968D80',
   line: 'rgba(245, 239, 228, 0.09)',
   lineStrong: 'rgba(245, 239, 228, 0.2)',
   pill: '#F5EFE4',
@@ -48,18 +50,24 @@ const dark: typeof light = {
 export type Theme = typeof light;
 export const themes = { light, dark };
 
+/** Light/dark follows Settings → Appearance; "System" follows the phone. */
 export function useTheme(): Theme {
-  return useColorScheme() === 'dark' ? dark : light;
+  const pref = usePrefs((s) => s.theme);
+  const system = useColorScheme();
+  const scheme = pref === 'system' ? system : pref;
+  return scheme === 'dark' ? dark : light;
 }
 
 export const font = {
-  serif: 'InstrumentSerif_400Regular',
-  serifItalic: 'InstrumentSerif_400Regular_Italic',
-  regular: 'Manrope_400Regular',
-  medium: 'Manrope_500Medium',
-  semibold: 'Manrope_600SemiBold',
-  bold: 'Manrope_700Bold',
-  extrabold: 'Manrope_800ExtraBold',
+  /** big numbers and headlines */
+  display: 'Nunito_800ExtraBold',
+  /** softer headline weight (prompts, secondary headings) */
+  displaySoft: 'Nunito_700Bold',
+  regular: 'Nunito_400Regular',
+  medium: 'Nunito_600SemiBold',
+  semibold: 'Nunito_700Bold',
+  bold: 'Nunito_800ExtraBold',
+  extrabold: 'Nunito_900Black',
 };
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };

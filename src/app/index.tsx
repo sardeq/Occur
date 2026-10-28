@@ -2,29 +2,51 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AddBubble } from '@/components/bubble';
+import { AddBubble, Bubble } from '@/components/bubble';
 import { RoundButton, tapHaptic } from '@/components/buttons';
 import { EmptyState } from '@/components/empty-state';
-import { Icon } from '@/components/icon';
+import { Icon, type IconName } from '@/components/icon';
 import { TapBubble } from '@/components/tap-bubble';
 import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
 import { useAuth } from '@/lib/auth';
 import { pack, radiusFor } from '@/lib/packing';
-import { addCategory, deleteEvent, logEvent, useData, type CategoryInput } from '@/lib/store';
+import { usePrefs } from '@/lib/prefs';
+import {
+  addCategory,
+  deleteEvent,
+  logEvent,
+  removeLatestToday,
+  restoreEvent,
+  useData,
+  type CategoryInput,
+} from '@/lib/store';
+import { SUGGESTIONS } from '@/lib/suggestions';
 import { DAY, MONTHS_LONG, WEEKDAYS_LONG, formatTime, numberWord, startOfDay } from '@/lib/time';
-import type { Category } from '@/lib/types';
-import { font, useTheme } from '@/theme';
+import type { Category, OccurEvent } from '@/lib/types';
+import { font, radius, useTheme } from '@/theme';
 import { swatch } from '@/theme/palette';
 
 const ADD = '__add__';
+/** how long the "Undo" bar stays up — long enough to read and reach */
+const TOAST_MS = 8000;
+/** show the "more ideas" strip until the home screen has this many bubbles */
+const IDEAS_UNTIL = 4;
 
-type Toast = { eventId: string; category: Category; at: Date; count: number };
+type Toast =
+  | { kind: 'add'; key: string; event: OccurEvent; category: Category; count: number }
+  | { kind: 'remove'; key: string; event: OccurEvent; category: Category; count: number };
+
+const haptic = (type: 'log' | 'remove') => {
+  if (Platform.OS === 'web') return;
+  if (type === 'log') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  else void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+};
 
 export default function Home() {
   const t = useTheme();
@@ -35,17 +57,20 @@ export default function Home() {
   const pending = useData((s) => s.queue.length);
   const syncError = useData((s) => s.syncError);
   const user = useAuth((s) => s.user);
+  const homeStyle = usePrefs((s) => s.homeStyle);
 
   const [field, setField] = useState({ w: 0, h: 0 });
   const [pulses, setPulses] = useState<Record<string, number>>({});
+  const [minusPulses, setMinusPulses] = useState<Record<string, number>>({});
   const [toast, setToast] = useState<Toast | null>(null);
 
   const d0 = startOfDay(now).getTime();
   const bottomBarH = 56 + insets.bottom + 24;
 
   // One pass over the log: today's times per category + 14-day usage weights.
-  const { todayHours, todayCounts, weights, total } = useMemo(() => {
+  const { todayHours, todayCounts, lastToday, weights, total } = useMemo(() => {
     const todayHours: Record<string, number[]> = {};
+    const lastToday: Record<string, Date> = {};
     const weights: Record<string, number> = {};
     let total = 0;
     const from = d0 - 14 * DAY;
@@ -54,16 +79,27 @@ export default function Home() {
       if (ts >= d0) {
         const d = new Date(ts);
         (todayHours[e.categoryId] ??= []).push(d.getHours() + d.getMinutes() / 60);
+        lastToday[e.categoryId] = d;
         total++;
       } else if (ts >= from) {
         weights[e.categoryId] = (weights[e.categoryId] ?? 0) + 1;
       }
     }
     const todayCounts = Object.fromEntries(Object.entries(todayHours).map(([k, v]) => [k, v.length]));
-    return { todayHours, todayCounts, weights, total };
+    return { todayHours, todayCounts, lastToday, weights, total };
   }, [events, d0]);
 
-  // Layout only depends on categories + yesterday's weights, so bubbles never
+  const usedNames = useMemo(() => new Set(categories.map((c) => c.name.trim().toLowerCase())), [categories]);
+  const moreIdeas = useMemo(
+    () =>
+      categories.length > 0 && categories.length < IDEAS_UNTIL
+        ? SUGGESTIONS.filter((s) => !usedNames.has(s.name.toLowerCase())).slice(0, 8)
+        : [],
+    [categories.length, usedNames],
+  );
+  const ideasH = moreIdeas.length ? 112 : 0;
+
+  // Layout only depends on categories + earlier days' weights, so bubbles never
   // jump around while you're tapping them.
   const layout = useMemo(() => {
     if (!field.w || !categories.length) return null;
@@ -71,13 +107,13 @@ export default function Home() {
     const items = [...categories]
       .sort((a, b) => (weights[b.id] ?? 0) - (weights[a.id] ?? 0) || a.createdAt.localeCompare(b.createdAt))
       .map((c) => ({ id: c.id, r: radiusFor(weights[c.id] ?? 0, maxW, field.w, categories.length) }));
-    items.push({ id: ADD, r: field.w * 0.095 });
-    return pack(items, field.w, field.h - bottomBarH + 30, { gap: 12, pad: 14 });
-  }, [categories, weights, field.w, field.h, bottomBarH]);
+    items.push({ id: ADD, r: Math.max(46, field.w * 0.11) });
+    return pack(items, field.w, field.h - bottomBarH - ideasH + 30, { gap: 16, pad: 18 });
+  }, [categories, weights, field.w, field.h, bottomBarH, ideasH]);
 
   useEffect(() => {
     if (!toast) return;
-    const id = setTimeout(() => setToast(null), 4000);
+    const id = setTimeout(() => setToast(null), TOAST_MS);
     return () => clearTimeout(id);
   }, [toast]);
 
@@ -86,15 +122,37 @@ export default function Home() {
 
   const onLog = (c: Category) => {
     const e = logEvent(c.id);
+    haptic('log');
     setPulses((p) => ({ ...p, [c.id]: (p[c.id] ?? 0) + 1 }));
-    setToast({ eventId: e.id, category: c, at: new Date(e.occurredAt), count: (todayCounts[c.id] ?? 0) + 1 });
+    setToast({ kind: 'add', key: e.id, event: e, category: c, count: (todayCounts[c.id] ?? 0) + 1 });
+  };
+
+  const onRemove = (c: Category) => {
+    const e = removeLatestToday(c.id, new Date());
+    if (!e) return;
+    haptic('remove');
+    setMinusPulses((p) => ({ ...p, [c.id]: (p[c.id] ?? 0) + 1 }));
+    setToast({
+      kind: 'remove',
+      key: `rm-${e.id}`,
+      event: e,
+      category: c,
+      count: Math.max(0, (todayCounts[c.id] ?? 1) - 1),
+    });
   };
 
   const undo = () => {
     if (!toast) return;
-    deleteEvent(toast.eventId);
-    if (Platform.OS !== 'web') void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    if (toast.kind === 'add') deleteEvent(toast.event.id);
+    else restoreEvent(toast.event);
+    haptic('remove');
     setToast(null);
+  };
+
+  const openCategory = (c: Category) => router.push({ pathname: '/category/[id]', params: { id: c.id } });
+  const openAdd = () => {
+    tapHaptic();
+    router.push('/add');
   };
 
   const quickAdd = (s: CategoryInput) => {
@@ -111,6 +169,7 @@ export default function Home() {
   const headline =
     total === 0 ? 'Nothing yet today.' : `${numberWord(total)} ${total === 1 ? 'moment' : 'moments'} today.`;
   const offline = !!syncError && pending > 0;
+  const showTips = categories.length > 0 && events.length < 40;
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
@@ -132,27 +191,28 @@ export default function Home() {
           <Text variant="title" style={{ marginTop: 4 }}>
             {categories.length ? headline : 'Hello.'}
           </Text>
-          {categories.length > 0 && events.length < 6 && (
-            <Text variant="caption" tone="faint" style={{ marginTop: 4 }}>
-              Tap a bubble to count it · hold it for details
-            </Text>
-          )}
         </View>
-        <View style={[styles.row, { gap: 8 }]}>
-          <RoundButton icon="chart" label="Insights" onPress={() => router.push('/insights')} />
-          <RoundButton label="Settings and account" onPress={() => router.push('/settings')}>
+        <View style={[styles.row, { gap: 6, alignItems: 'flex-start' }]}>
+          <HeaderButton icon="chart" label="Insights" onPress={() => router.push('/insights')} />
+          <HeaderButton label="Settings" a11y="Settings and account" onPress={() => router.push('/settings')}>
             {user?.avatarUrl ? (
-              <Image source={{ uri: user.avatarUrl }} style={{ width: 44, height: 44 }} contentFit="cover" />
+              <Image source={{ uri: user.avatarUrl }} style={{ width: 46, height: 46 }} contentFit="cover" />
             ) : (
-              <Text style={{ fontFamily: font.serif, fontSize: 22, color: t.ink }}>
-                {(user?.name ?? user?.email ?? 'O').trim().charAt(0).toUpperCase()}
-              </Text>
+              <Icon name="gear" size={22} color={t.ink} />
             )}
-          </RoundButton>
+          </HeaderButton>
         </View>
       </View>
 
-      {/* bubble field */}
+      {showTips && (
+        <View style={[styles.tips, { backgroundColor: t.surface, borderColor: t.line }]}>
+          <Tip icon="plus" text={homeStyle === 'list' ? 'Tap + to add one' : 'Tap a bubble to add one'} />
+          <Tip icon="minus" text={homeStyle === 'list' ? 'Tap − to take one away' : 'Mistake? Tap − or swipe down'} />
+          <Tip icon="chevron" text={homeStyle === 'list' ? 'Tap a name for details' : 'Hold a bubble for details'} />
+        </View>
+      )}
+
+      {/* content */}
       <View style={{ flex: 1 }} onLayout={onFieldLayout}>
         {field.w > 0 && categories.length === 0 && (
           <EmptyState
@@ -162,12 +222,39 @@ export default function Home() {
             onQuickAdd={quickAdd}
           />
         )}
-        {layout && (
+
+        {homeStyle === 'list' && categories.length > 0 && (
           <ScrollView
-            contentContainerStyle={{ height: layout.height + bottomBarH - 30 }}
+            contentContainerStyle={{ padding: 16, paddingBottom: bottomBarH + 30, gap: 10 }}
+            showsVerticalScrollIndicator={false}>
+            {categories.map((c) => (
+              <ListRow
+                key={c.id}
+                category={c}
+                count={todayCounts[c.id] ?? 0}
+                last={lastToday[c.id]}
+                onAdd={() => onLog(c)}
+                onRemove={() => onRemove(c)}
+                onOpen={() => openCategory(c)}
+              />
+            ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add something to count"
+              onPress={openAdd}
+              style={({ pressed }) => [styles.addRow, { borderColor: t.lineStrong, opacity: pressed ? 0.7 : 1 }]}>
+              <Icon name="plus" size={22} color={t.ink} strokeWidth={2.3} />
+              <Text variant="bodyStrong">Add something to count</Text>
+            </Pressable>
+          </ScrollView>
+        )}
+
+        {homeStyle === 'bubbles' && layout && (
+          <ScrollView
+            contentContainerStyle={{ height: layout.height + bottomBarH + ideasH - 30 }}
             scrollIndicatorInsets={{ bottom: bottomBarH }}
             showsVerticalScrollIndicator={false}
-            scrollEnabled={layout.height > field.h - bottomBarH + 30}>
+            scrollEnabled={layout.height > field.h - bottomBarH - ideasH + 30}>
             {layout.placed.map((p) => {
               if (p.id === ADD) {
                 return (
@@ -178,12 +265,9 @@ export default function Home() {
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel="Add something to count"
-                      onPress={() => {
-                        tapHaptic();
-                        router.push('/edit-category');
-                      }}
+                      onPress={openAdd}
                       style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.93 : 1 }] })}>
-                      <AddBubble size={p.r * 2} color={t.inkSoft} />
+                      <AddBubble size={p.r * 2} color={t.inkSoft} label="Add" />
                     </Pressable>
                   </Animated.View>
                 );
@@ -202,13 +286,16 @@ export default function Home() {
                   emoji={c.emoji}
                   name={c.name}
                   count={count}
+                  todayCount={count}
                   dimCount={count === 0}
                   dots={todayHours[c.id] ?? []}
                   nowHour={nowHour}
                   pulse={pulses[c.id] ?? 0}
+                  minusPulse={minusPulses[c.id] ?? 0}
                   label={`${c.name}, ${count} today`}
                   onLog={() => onLog(c)}
-                  onOpen={() => router.push({ pathname: '/category/[id]', params: { id: c.id } })}
+                  onRemove={() => onRemove(c)}
+                  onOpen={() => openCategory(c)}
                 />
               );
             })}
@@ -222,32 +309,71 @@ export default function Home() {
           pointerEvents="none"
           colors={[t.bg + '00', t.bg]}
           style={StyleSheet.absoluteFill}
-          locations={[0, 0.55]}
+          locations={[0, 0.4]}
         />
+
+        {!toast && homeStyle === 'bubbles' && moreIdeas.length > 0 && (
+          <View style={{ marginBottom: 12 }}>
+            <Text variant="label" tone="soft" style={{ paddingHorizontal: 20, marginBottom: 8 }}>
+              More ideas — tap to add
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
+              {moreIdeas.map((s) => (
+                <Pressable
+                  key={s.name}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add ${s.name}`}
+                  onPress={() => {
+                    tapHaptic();
+                    quickAdd(s);
+                  }}
+                  style={({ pressed }) => [
+                    styles.idea,
+                    { backgroundColor: t.surface, borderColor: t.line, opacity: pressed ? 0.7 : 1 },
+                  ]}>
+                  <Text style={{ fontSize: 20 }}>{s.emoji}</Text>
+                  <Text variant="bodyStrong">{s.name}</Text>
+                  <Icon name="plus" size={16} color={t.inkSoft} strokeWidth={2.4} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {toast && (
           <Animated.View
-            key={toast.eventId}
+            key={toast.key}
             entering={FadeInDown.springify().damping(16)}
             exiting={FadeOutDown.duration(180)}
             style={[styles.toast, { backgroundColor: t.surface, borderColor: t.line, shadowColor: t.shadow }]}>
-            <Text style={{ fontSize: 20 }}>{toast.category.emoji}</Text>
-            <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 24 }}>{toast.category.emoji}</Text>
+            <Pressable
+              style={{ flex: 1 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${toast.category.name}`}
+              onPress={() => {
+                setToast(null);
+                openCategory(toast.category);
+              }}>
               <Text variant="bodyStrong" numberOfLines={1}>
-                {toast.category.name} · {formatTime(toast.at)}
+                {toast.kind === 'add' ? `Added ${toast.category.name}` : `Took one ${toast.category.name} away`}
               </Text>
-              <Text variant="caption" tone="soft">
-                {numberWord(toast.count)} today
+              <Text variant="caption" tone="soft" numberOfLines={1}>
+                {toast.kind === 'add' ? `${formatTime(new Date(toast.event.occurredAt))} · ` : ''}
+                {toast.count} today
               </Text>
-            </View>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Undo"
               onPress={undo}
               hitSlop={10}
-              style={[styles.undo, { borderColor: t.lineStrong }]}>
-              <Icon name="undo" size={16} color={t.ink} />
-              <Text variant="label">Undo</Text>
+              style={({ pressed }) => [styles.undo, { backgroundColor: t.pill, opacity: pressed ? 0.8 : 1 }]}>
+              <Icon name="undo" size={18} color={t.pillInk} strokeWidth={2.2} />
+              <Text style={{ fontFamily: font.bold, fontSize: 16, color: t.pillInk }}>Undo</Text>
             </Pressable>
           </Animated.View>
         )}
@@ -265,16 +391,132 @@ export default function Home() {
               { backgroundColor: t.pill, transform: [{ scale: pressed ? 0.98 : 1 }] },
             ]}>
             <Icon name="sparkle" size={18} color={t.pillInk} />
-            <Text style={{ fontFamily: font.serifItalic, fontSize: 21, color: t.pillInk }}>Ask your history…</Text>
+            <Text style={{ fontFamily: font.displaySoft, fontSize: 18, color: t.pillInk }} numberOfLines={1}>
+              Ask a question…
+            </Text>
           </Pressable>
-          <RoundButton
-            icon="plus"
-            label="New bubble"
-            size={56}
-            tone="glass"
-            onPress={() => router.push('/edit-category')}
-          />
+          <RoundButton icon="plus" label="Add something to count" size={56} tone="glass" onPress={openAdd} />
         </View>
+      </View>
+    </View>
+  );
+}
+
+/** Icon button with its name written underneath. */
+function HeaderButton({
+  icon,
+  label,
+  a11y,
+  onPress,
+  children,
+}: {
+  icon?: IconName;
+  label: string;
+  a11y?: string;
+  onPress: () => void;
+  children?: ReactNode;
+}) {
+  const t = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={a11y ?? label}
+      hitSlop={6}
+      onPress={() => {
+        tapHaptic();
+        onPress();
+      }}
+      style={({ pressed }) => [styles.headerBtn, { transform: [{ scale: pressed ? 0.94 : 1 }] }]}>
+      <View style={[styles.headerDisc, { backgroundColor: t.surface, borderColor: t.line }]}>
+        {children ?? (icon ? <Icon name={icon} size={22} color={t.ink} /> : null)}
+      </View>
+      <Text style={{ fontFamily: font.semibold, fontSize: 12, color: t.inkSoft, marginTop: 3 }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function Tip({ icon, text }: { icon: IconName; text: string }) {
+  const t = useTheme();
+  return (
+    <View style={[styles.row, { gap: 10 }]}>
+      <View style={[styles.tipIcon, { backgroundColor: t.surfaceAlt }]}>
+        <Icon name={icon} size={14} color={t.ink} strokeWidth={2.6} />
+      </View>
+      <Text variant="caption" tone="soft" style={{ flex: 1 }}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+/** List-style home row: big − and + buttons either side of today's count. */
+function ListRow({
+  category,
+  count,
+  last,
+  onAdd,
+  onRemove,
+  onOpen,
+}: {
+  category: Category;
+  count: number;
+  last?: Date;
+  onAdd: () => void;
+  onRemove: () => void;
+  onOpen: () => void;
+}) {
+  const t = useTheme();
+  const sw = swatch(category.color);
+  return (
+    <View style={[styles.listRow, { backgroundColor: t.surface, borderColor: t.line }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${category.name}, ${count} today. Open details`}
+        onPress={onOpen}
+        style={({ pressed }) => [styles.row, { flex: 1, gap: 12, opacity: pressed ? 0.6 : 1 }]}>
+        <Bubble size={48} swatch={sw} emoji={category.emoji} />
+        <View style={{ flex: 1 }}>
+          <Text variant="bodyStrong" numberOfLines={1}>
+            {category.name}
+          </Text>
+          <Text variant="caption" tone="soft" numberOfLines={1}>
+            {last ? `Last at ${formatTime(last)}` : 'None yet today'}
+          </Text>
+        </View>
+      </Pressable>
+      <View style={[styles.row, { gap: 8 }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Take one ${category.name} away`}
+          disabled={count === 0}
+          onPress={onRemove}
+          hitSlop={4}
+          style={({ pressed }) => [
+            styles.stepBtn,
+            {
+              borderColor: t.lineStrong,
+              backgroundColor: t.bg,
+              opacity: count === 0 ? 0.35 : pressed ? 0.6 : 1,
+            },
+          ]}>
+          <Icon name="minus" size={22} color={t.ink} strokeWidth={2.6} />
+        </Pressable>
+        <Text
+          accessibilityLabel={`${count} today`}
+          style={{ fontFamily: font.display, fontSize: 26, color: t.ink, minWidth: 34, textAlign: 'center' }}>
+          {count}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Add one ${category.name}`}
+          onPress={onAdd}
+          hitSlop={4}
+          style={({ pressed }) => [
+            styles.stepBtn,
+            { backgroundColor: sw.base, borderColor: sw.deep, transform: [{ scale: pressed ? 0.92 : 1 }] },
+          ]}>
+          <Icon name="plus" size={22} color={sw.ink} strokeWidth={2.6} />
+        </Pressable>
       </View>
     </View>
   );
@@ -284,6 +526,25 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center' },
   header: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 20, paddingBottom: 6, zIndex: 2 },
+  headerBtn: { alignItems: 'center', minWidth: 56 },
+  headerDisc: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  tips: {
+    marginHorizontal: 16,
+    marginTop: 6,
+    padding: 12,
+    gap: 8,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+  },
+  tipIcon: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 36 },
   ask: {
     flex: 1,
@@ -294,6 +555,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     gap: 10,
   },
+  idea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 48,
+    paddingHorizontal: 16,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+  },
   toast: {
     marginHorizontal: 16,
     marginBottom: 10,
@@ -302,10 +572,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingLeft: 16,
     paddingRight: 10,
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.14,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 6 },
   },
@@ -313,9 +583,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    height: 36,
-    paddingHorizontal: 14,
-    borderRadius: 18,
+    height: 46,
+    paddingHorizontal: 18,
+    borderRadius: 23,
+  },
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth * 2,
+  },
+  stepBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    height: 64,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
   },
 });
