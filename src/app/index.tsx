@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import Animated, { FadeInDown, FadeOutDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddBubble, Bubble } from '@/components/bubble';
@@ -16,7 +16,7 @@ import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
 import { useAuth } from '@/lib/auth';
 import { pack, radiusFor } from '@/lib/packing';
-import { usePrefs } from '@/lib/prefs';
+import { setPref, usePrefs } from '@/lib/prefs';
 import {
   addCategory,
   deleteEvent,
@@ -37,6 +37,8 @@ const ADD = '__add__';
 const TOAST_MS = 8000;
 /** show the "more ideas" strip until the home screen has this many bubbles */
 const IDEAS_UNTIL = 4;
+/** height of the bottom "Ask" pill and its + button */
+const ASK_H = 46;
 
 type Toast =
   | { kind: 'add'; key: string; event: OccurEvent; category: Category; count: number }
@@ -58,6 +60,7 @@ export default function Home() {
   const syncError = useData((s) => s.syncError);
   const user = useAuth((s) => s.user);
   const homeStyle = usePrefs((s) => s.homeStyle);
+  const tipsOpen = usePrefs((s) => s.tipsOpen);
 
   const [field, setField] = useState({ w: 0, h: 0 });
   const [pulses, setPulses] = useState<Record<string, number>>({});
@@ -65,7 +68,7 @@ export default function Home() {
   const [toast, setToast] = useState<Toast | null>(null);
 
   const d0 = startOfDay(now).getTime();
-  const bottomBarH = 56 + insets.bottom + 24;
+  const bottomBarH = ASK_H + insets.bottom + 18;
 
   // One pass over the log: today's times per category + 14-day usage weights.
   const { todayHours, todayCounts, lastToday, weights, total } = useMemo(() => {
@@ -97,7 +100,7 @@ export default function Home() {
         : [],
     [categories.length, usedNames],
   );
-  const ideasH = moreIdeas.length ? 112 : 0;
+  const ideasH = moreIdeas.length ? 72 : 0;
 
   // Layout only depends on categories + earlier days' weights, so bubbles never
   // jump around while you're tapping them.
@@ -196,19 +199,41 @@ export default function Home() {
           <HeaderButton icon="chart" label="Insights" onPress={() => router.push('/insights')} />
           <HeaderButton label="Settings" a11y="Settings and account" onPress={() => router.push('/settings')}>
             {user?.avatarUrl ? (
-              <Image source={{ uri: user.avatarUrl }} style={{ width: 46, height: 46 }} contentFit="cover" />
+              <Image source={{ uri: user.avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
             ) : (
-              <Icon name="gear" size={22} color={t.ink} />
+              <Icon name="gear" size={19} color={t.ink} />
             )}
           </HeaderButton>
         </View>
       </View>
 
       {showTips && (
-        <View style={[styles.tips, { backgroundColor: t.surface, borderColor: t.line }]}>
-          <Tip icon="plus" text={homeStyle === 'list' ? 'Tap + to add one' : 'Tap a bubble to add one'} />
-          <Tip icon="minus" text={homeStyle === 'list' ? 'Tap − to take one away' : 'Mistake? Tap − or swipe down'} />
-          <Tip icon="chevron" text={homeStyle === 'list' ? 'Tap a name for details' : 'Hold a bubble for details'} />
+        <View style={styles.tipsWrap}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tipsOpen ? 'Hide tips' : 'Show tips'}
+            accessibilityState={{ expanded: tipsOpen }}
+            hitSlop={8}
+            onPress={() => {
+              tapHaptic();
+              setPref('tipsOpen', !tipsOpen);
+            }}
+            style={({ pressed }) => [styles.tipsToggle, { opacity: pressed ? 0.6 : 1 }]}>
+            <View style={{ transform: [{ rotate: tipsOpen ? '90deg' : '0deg' }] }}>
+              <Icon name="chevron" size={13} color={t.inkSoft} strokeWidth={2.8} />
+            </View>
+            <Text style={{ fontFamily: font.semibold, fontSize: 14, color: t.inkSoft }}>Tips</Text>
+          </Pressable>
+          {tipsOpen && (
+            <Animated.View
+              entering={FadeIn.duration(160)}
+              exiting={FadeOut.duration(120)}
+              style={[styles.tips, { backgroundColor: t.surface, borderColor: t.line }]}>
+              <Tip icon="plus" text={homeStyle === 'list' ? 'Tap + to add one' : 'Tap a bubble to add one'} />
+              <Tip icon="minus" text={homeStyle === 'list' ? 'Tap − to take one away' : 'Mistake? Tap − or swipe down'} />
+              <Tip icon="chevron" text={homeStyle === 'list' ? 'Tap a name for details' : 'Hold a bubble for details'} />
+            </Animated.View>
+          )}
         </View>
       )}
 
@@ -313,14 +338,15 @@ export default function Home() {
         />
 
         {!toast && homeStyle === 'bubbles' && moreIdeas.length > 0 && (
-          <View style={{ marginBottom: 12 }}>
-            <Text variant="label" tone="soft" style={{ paddingHorizontal: 20, marginBottom: 8 }}>
+          <View style={{ marginBottom: 8 }}>
+            <Text
+              style={{ fontFamily: font.semibold, fontSize: 13, color: t.inkSoft, paddingHorizontal: 20, marginBottom: 6 }}>
               More ideas — tap to add
             </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
+              contentContainerStyle={{ gap: 6, paddingHorizontal: 16 }}>
               {moreIdeas.map((s) => (
                 <Pressable
                   key={s.name}
@@ -334,9 +360,9 @@ export default function Home() {
                     styles.idea,
                     { backgroundColor: t.surface, borderColor: t.line, opacity: pressed ? 0.7 : 1 },
                   ]}>
-                  <Text style={{ fontSize: 20 }}>{s.emoji}</Text>
-                  <Text variant="bodyStrong">{s.name}</Text>
-                  <Icon name="plus" size={16} color={t.inkSoft} strokeWidth={2.4} />
+                  <Text style={{ fontSize: 15 }}>{s.emoji}</Text>
+                  <Text variant="label">{s.name}</Text>
+                  <Icon name="plus" size={13} color={t.inkSoft} strokeWidth={2.6} />
                 </Pressable>
               ))}
             </ScrollView>
@@ -349,7 +375,7 @@ export default function Home() {
             entering={FadeInDown.springify().damping(16)}
             exiting={FadeOutDown.duration(180)}
             style={[styles.toast, { backgroundColor: t.surface, borderColor: t.line, shadowColor: t.shadow }]}>
-            <Text style={{ fontSize: 24 }}>{toast.category.emoji}</Text>
+            <Text style={{ fontSize: 20 }}>{toast.category.emoji}</Text>
             <Pressable
               style={{ flex: 1 }}
               accessibilityRole="button"
@@ -358,10 +384,10 @@ export default function Home() {
                 setToast(null);
                 openCategory(toast.category);
               }}>
-              <Text variant="bodyStrong" numberOfLines={1}>
+              <Text variant="label" numberOfLines={1}>
                 {toast.kind === 'add' ? `Added ${toast.category.name}` : `Took one ${toast.category.name} away`}
               </Text>
-              <Text variant="caption" tone="soft" numberOfLines={1}>
+              <Text style={{ fontFamily: font.medium, fontSize: 13, color: t.inkSoft }} numberOfLines={1}>
                 {toast.kind === 'add' ? `${formatTime(new Date(toast.event.occurredAt))} · ` : ''}
                 {toast.count} today
               </Text>
@@ -372,13 +398,13 @@ export default function Home() {
               onPress={undo}
               hitSlop={10}
               style={({ pressed }) => [styles.undo, { backgroundColor: t.pill, opacity: pressed ? 0.8 : 1 }]}>
-              <Icon name="undo" size={18} color={t.pillInk} strokeWidth={2.2} />
-              <Text style={{ fontFamily: font.bold, fontSize: 16, color: t.pillInk }}>Undo</Text>
+              <Icon name="undo" size={15} color={t.pillInk} strokeWidth={2.3} />
+              <Text style={{ fontFamily: font.bold, fontSize: 14, color: t.pillInk }}>Undo</Text>
             </Pressable>
           </Animated.View>
         )}
 
-        <View style={[styles.row, { gap: 10, paddingHorizontal: 16 }]}>
+        <View style={[styles.row, { gap: 8, paddingHorizontal: 16 }]}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Ask a question about your history"
@@ -390,12 +416,12 @@ export default function Home() {
               styles.ask,
               { backgroundColor: t.pill, transform: [{ scale: pressed ? 0.98 : 1 }] },
             ]}>
-            <Icon name="sparkle" size={18} color={t.pillInk} />
-            <Text style={{ fontFamily: font.displaySoft, fontSize: 18, color: t.pillInk }} numberOfLines={1}>
+            <Icon name="sparkle" size={15} color={t.pillInk} />
+            <Text style={{ fontFamily: font.displaySoft, fontSize: 16, color: t.pillInk }} numberOfLines={1}>
               Ask a question…
             </Text>
           </Pressable>
-          <RoundButton icon="plus" label="Add something to count" size={56} tone="glass" onPress={openAdd} />
+          <RoundButton icon="plus" label="Add something to count" size={ASK_H} tone="glass" onPress={openAdd} />
         </View>
       </View>
     </View>
@@ -428,9 +454,9 @@ function HeaderButton({
       }}
       style={({ pressed }) => [styles.headerBtn, { transform: [{ scale: pressed ? 0.94 : 1 }] }]}>
       <View style={[styles.headerDisc, { backgroundColor: t.surface, borderColor: t.line }]}>
-        {children ?? (icon ? <Icon name={icon} size={22} color={t.ink} /> : null)}
+        {children ?? (icon ? <Icon name={icon} size={19} color={t.ink} /> : null)}
       </View>
-      <Text style={{ fontFamily: font.semibold, fontSize: 12, color: t.inkSoft, marginTop: 3 }}>{label}</Text>
+      <Text style={{ fontFamily: font.semibold, fontSize: 11, color: t.inkSoft, marginTop: 2 }}>{label}</Text>
     </Pressable>
   );
 }
@@ -438,11 +464,11 @@ function HeaderButton({
 function Tip({ icon, text }: { icon: IconName; text: string }) {
   const t = useTheme();
   return (
-    <View style={[styles.row, { gap: 10 }]}>
+    <View style={[styles.row, { gap: 8 }]}>
       <View style={[styles.tipIcon, { backgroundColor: t.surfaceAlt }]}>
-        <Icon name={icon} size={14} color={t.ink} strokeWidth={2.6} />
+        <Icon name={icon} size={11} color={t.ink} strokeWidth={2.8} />
       </View>
-      <Text variant="caption" tone="soft" style={{ flex: 1 }}>
+      <Text style={{ flex: 1, fontFamily: font.medium, fontSize: 13, lineHeight: 17, color: t.inkSoft }}>
         {text}
       </Text>
     </View>
@@ -526,55 +552,57 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center' },
   header: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 20, paddingBottom: 6, zIndex: 2 },
-  headerBtn: { alignItems: 'center', minWidth: 56 },
+  headerBtn: { alignItems: 'center', minWidth: 50 },
   headerDisc: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  tipsWrap: { paddingHorizontal: 16, zIndex: 2 },
+  tipsToggle: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, paddingHorizontal: 4, paddingVertical: 4 },
   tips: {
-    marginHorizontal: 16,
-    marginTop: 6,
-    padding: 12,
-    gap: 8,
+    marginTop: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    gap: 6,
     borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
-  tipIcon: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 36 },
+  tipIcon: { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 28 },
   ask: {
     flex: 1,
-    height: 56,
-    borderRadius: 28,
+    height: ASK_H,
+    borderRadius: ASK_H / 2,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 22,
-    gap: 10,
+    paddingHorizontal: 18,
+    gap: 8,
   },
   idea: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    height: 48,
-    paddingHorizontal: 16,
+    gap: 6,
+    height: 36,
+    paddingHorizontal: 12,
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
   toast: {
     marginHorizontal: 16,
-    marginBottom: 10,
-    borderRadius: 22,
+    marginBottom: 8,
+    borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth * 2,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingLeft: 16,
-    paddingRight: 10,
+    gap: 10,
+    paddingVertical: 8,
+    paddingLeft: 14,
+    paddingRight: 8,
     shadowOpacity: 0.14,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 6 },
@@ -582,10 +610,10 @@ const styles = StyleSheet.create({
   undo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    height: 46,
-    paddingHorizontal: 18,
-    borderRadius: 23,
+    gap: 5,
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: 17,
   },
   listRow: {
     flexDirection: 'row',

@@ -9,10 +9,10 @@ import { kv } from './kv';
 export type ThemePref = 'system' | 'light' | 'dark';
 export type HomeStyle = 'bubbles' | 'list';
 
-type Prefs = { theme: ThemePref; homeStyle: HomeStyle };
+type Prefs = { theme: ThemePref; homeStyle: HomeStyle; tipsOpen: boolean };
 
 const KEY = 'occur.prefs.v1';
-const defaults: Prefs = { theme: 'system', homeStyle: 'bubbles' };
+const defaults: Prefs = { theme: 'system', homeStyle: 'bubbles', tipsOpen: false };
 
 function load(): Prefs {
   try {
@@ -22,6 +22,7 @@ function load(): Prefs {
     return {
       theme: p.theme === 'light' || p.theme === 'dark' ? p.theme : 'system',
       homeStyle: p.homeStyle === 'list' ? 'list' : 'bubbles',
+      tipsOpen: p.tipsOpen === true,
     };
   } catch {
     return defaults;
