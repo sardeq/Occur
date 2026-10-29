@@ -10,11 +10,27 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AddBubble, Bubble } from '@/components/bubble';
 import { RoundButton, tapHaptic } from '@/components/buttons';
 import { EmptyState } from '@/components/empty-state';
+import { FilterBar } from '@/components/filter-bar';
+import { FocusCard, MixCard } from '@/components/filter-card';
 import { Icon, type IconName } from '@/components/icon';
 import { TapBubble } from '@/components/tap-bubble';
 import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
 import { useAuth } from '@/lib/auth';
+import {
+  applyFilter,
+  focusTiles,
+  goalsInUse,
+  mixLine,
+  quietLine,
+  rangeSeries,
+  rangeWord,
+  sinceShort,
+  statFor,
+  summarize,
+  type HomeRange,
+  type Lens,
+} from '@/lib/home-filter';
 import { pack, radiusFor } from '@/lib/packing';
 import { setPref, usePrefs } from '@/lib/prefs';
 import {
@@ -66,6 +82,10 @@ export default function Home() {
   const [pulses, setPulses] = useState<Record<string, number>>({});
   const [minusPulses, setMinusPulses] = useState<Record<string, number>>({});
   const [toast, setToast] = useState<Toast | null>(null);
+  // filter bar: period the bubbles count over + what's shown
+  const [range, setRange] = useState<HomeRange>('today');
+  const [lens, setLens] = useState<Lens | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
 
   const d0 = startOfDay(now).getTime();
   const bottomBarH = ASK_H + insets.bottom + 18;
@@ -92,27 +112,97 @@ export default function Home() {
     return { todayHours, todayCounts, lastToday, weights, total };
   }, [events, d0]);
 
+  const byId = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
+
+  // ---- filter bar ----
+  const byCat = useMemo(() => summarize(events, range, now), [events, range, now]);
+  const pickedIds = useMemo(() => picked.filter((id) => byId.has(id)), [picked, byId]);
+  const filtering = lens !== null || pickedIds.length > 0;
+  const word = rangeWord(range);
+  // Bubble size: 14-day habit for "Today", otherwise the period so far minus
+  // today — either way it doesn't change while you're tapping.
+  const sizeWeights = useMemo(
+    () => (range === 'today' ? weights : Object.fromEntries(Object.entries(byCat).map(([k, v]) => [k, v.before]))),
+    [range, weights, byCat],
+  );
+  /** stable order for chips: most-used first */
+  const ordered = useMemo(
+    () =>
+      [...categories].sort(
+        (a, b) => (weights[b.id] ?? 0) - (weights[a.id] ?? 0) || a.createdAt.localeCompare(b.createdAt),
+      ),
+    [categories, weights],
+  );
+  const visible = useMemo(() => applyFilter(categories, byCat, lens, pickedIds), [categories, byCat, lens, pickedIds]);
+  const counts = useMemo(
+    () => Object.fromEntries(categories.map((c) => [c.id, statFor(byCat, c.id).count])),
+    [categories, byCat],
+  );
+  const goals = useMemo(() => goalsInUse(categories), [categories]);
+  const focus = pickedIds.length === 1 ? byId.get(pickedIds[0]) : undefined;
+  const focusData = useMemo(() => {
+    if (!focus) return null;
+    const evs = events.filter((e) => e.categoryId === focus.id);
+    return {
+      tiles: focusTiles(evs, focus, statFor(byCat, focus.id), range, now),
+      series: rangeSeries(evs, range, now),
+    };
+  }, [focus, events, byCat, range, now]);
+  const mix = useMemo(() => {
+    if (focus || !categories.length) return null;
+    if (lens === 'quiet') {
+      const line = quietLine(
+        visible.map((c) => ({ category: c, last: statFor(byCat, c.id).last })),
+        now,
+      );
+      return { items: [], line };
+    }
+    if (pickedIds.length < 2 && !lens && range === 'today') return null;
+    const items = visible.map((c) => ({ category: c, count: statFor(byCat, c.id).count }));
+    return { items, line: mixLine(items, events, range, now) };
+  }, [focus, categories.length, lens, pickedIds.length, range, visible, byCat, events, now]);
+
+  const pick = (id: string) => {
+    setLens(null);
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  };
+  const chooseLens = (l: Lens) => {
+    setPicked([]);
+    setLens((cur) => (cur === l ? null : l));
+  };
+  const clearFilter = () => {
+    setLens(null);
+    setPicked([]);
+  };
+
   const usedNames = useMemo(() => new Set(categories.map((c) => c.name.trim().toLowerCase())), [categories]);
   const moreIdeas = useMemo(
     () =>
-      categories.length > 0 && categories.length < IDEAS_UNTIL
+      !filtering && categories.length > 0 && categories.length < IDEAS_UNTIL
         ? SUGGESTIONS.filter((s) => !usedNames.has(s.name.toLowerCase())).slice(0, 8)
         : [],
-    [categories.length, usedNames],
+    [filtering, categories.length, usedNames],
   );
   const ideasH = moreIdeas.length ? 72 : 0;
 
-  // Layout only depends on categories + earlier days' weights, so bubbles never
-  // jump around while you're tapping them.
+  // Layout only depends on what's shown + earlier days' weights, so bubbles
+  // never jump around while you're tapping them.
   const layout = useMemo(() => {
-    if (!field.w || !categories.length) return null;
-    const maxW = Math.max(0, ...categories.map((c) => weights[c.id] ?? 0));
-    const items = [...categories]
-      .sort((a, b) => (weights[b.id] ?? 0) - (weights[a.id] ?? 0) || a.createdAt.localeCompare(b.createdAt))
-      .map((c) => ({ id: c.id, r: radiusFor(weights[c.id] ?? 0, maxW, field.w, categories.length) }));
-    items.push({ id: ADD, r: Math.max(46, field.w * 0.11) });
-    return pack(items, field.w, field.h - bottomBarH - ideasH + 30, { gap: 16, pad: 18 });
-  }, [categories, weights, field.w, field.h, bottomBarH, ideasH]);
+    if (!field.w || !visible.length) return null;
+    const viewH = field.h - bottomBarH - ideasH + 30;
+    const maxW = Math.max(0, ...visible.map((c) => sizeWeights[c.id] ?? 0));
+    const items = [...visible]
+      .sort((a, b) => (sizeWeights[b.id] ?? 0) - (sizeWeights[a.id] ?? 0) || a.createdAt.localeCompare(b.createdAt))
+      .map((c) => ({
+        id: c.id,
+        r:
+          visible.length === 1
+            ? Math.max(60, Math.min(field.w * 0.3, viewH * 0.36))
+            : radiusFor(sizeWeights[c.id] ?? 0, maxW, field.w, visible.length),
+      }));
+    if (!filtering) items.push({ id: ADD, r: Math.max(46, field.w * 0.11) });
+    return pack(items, field.w, viewH, { gap: 16, pad: 18 });
+  }, [visible, filtering, sizeWeights, field.w, field.h, bottomBarH, ideasH]);
 
   useEffect(() => {
     if (!toast) return;
@@ -120,7 +210,6 @@ export default function Home() {
     return () => clearTimeout(id);
   }, [toast]);
 
-  const byId = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
   const nowHour = now.getHours() + now.getMinutes() / 60;
 
   const onLog = (c: Category) => {
@@ -169,8 +258,21 @@ export default function Home() {
   };
 
   const dateLine = `${WEEKDAYS_LONG[now.getDay()]}, ${now.getDate()} ${MONTHS_LONG[now.getMonth()]}`;
-  const headline =
-    total === 0 ? 'Nothing yet today.' : `${numberWord(total)} ${total === 1 ? 'moment' : 'moments'} today.`;
+  const shown = filtering
+    ? visible.reduce((n, c) => n + statFor(byCat, c.id).count, 0)
+    : range === 'today'
+      ? total
+      : Object.values(counts).reduce((a, b) => a + b, 0);
+  const headline = focus
+    ? `${focus.name}, ${numberWord(shown).toLowerCase()} ${word}.`
+    : lens === 'quiet'
+      ? visible.length
+        ? `${numberWord(visible.length)} quiet ${visible.length === 1 ? 'one' : 'ones'} ${word}.`
+        : `Nothing quiet ${word}.`
+      : shown === 0
+        ? `Nothing yet ${word}.`
+        : `${numberWord(shown)} ${shown === 1 ? 'moment' : 'moments'} ${word}.`;
+  const emptyFilterMsg = lens === 'quiet' ? `Everything's had a turn ${word}.` : `Nothing logged ${word} yet.`;
   const offline = !!syncError && pending > 0;
   const showTips = categories.length > 0 && events.length < 40;
 
@@ -207,7 +309,32 @@ export default function Home() {
         </View>
       </View>
 
-      {showTips && (
+      {categories.length > 0 && (
+        <FilterBar
+          range={range}
+          onRange={setRange}
+          lens={lens}
+          onLens={chooseLens}
+          picked={pickedIds}
+          onPick={pick}
+          onClear={clearFilter}
+          categories={ordered}
+          counts={counts}
+          goals={goals}
+        />
+      )}
+      {focus && focusData && (
+        <FocusCard
+          key={focus.id}
+          category={focus}
+          tiles={focusData.tiles}
+          series={focusData.series}
+          onOpen={() => openCategory(focus)}
+        />
+      )}
+      {mix && <MixCard items={mix.items} line={mix.line} />}
+
+      {showTips && !filtering && (
         <View style={styles.tipsWrap}>
           <Pressable
             accessibilityRole="button"
@@ -248,29 +375,52 @@ export default function Home() {
           />
         )}
 
+        {categories.length > 0 && filtering && visible.length === 0 && (
+          <Animated.View entering={FadeIn.duration(180)} style={[styles.filterEmpty, { paddingBottom: bottomBarH }]}>
+            <Text style={{ fontSize: 40, lineHeight: 50 }}>{lens === 'quiet' ? '🎉' : '🫧'}</Text>
+            <Text variant="subheading" style={{ textAlign: 'center', marginTop: 6 }}>
+              {emptyFilterMsg}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                tapHaptic();
+                clearFilter();
+              }}
+              hitSlop={8}
+              style={({ pressed }) => [styles.filterEmptyBtn, { borderColor: t.lineStrong, opacity: pressed ? 0.6 : 1 }]}>
+              <Text variant="label">Show everything</Text>
+            </Pressable>
+          </Animated.View>
+        )}
+
         {homeStyle === 'list' && categories.length > 0 && (
           <ScrollView
             contentContainerStyle={{ padding: 16, paddingBottom: bottomBarH + 30, gap: 10 }}
             showsVerticalScrollIndicator={false}>
-            {categories.map((c) => (
+            {visible.map((c) => (
               <ListRow
                 key={c.id}
                 category={c}
-                count={todayCounts[c.id] ?? 0}
+                count={statFor(byCat, c.id).count}
+                todayCount={todayCounts[c.id] ?? 0}
+                periodWord={word}
                 last={lastToday[c.id]}
                 onAdd={() => onLog(c)}
                 onRemove={() => onRemove(c)}
                 onOpen={() => openCategory(c)}
               />
             ))}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add something to count"
-              onPress={openAdd}
-              style={({ pressed }) => [styles.addRow, { borderColor: t.lineStrong, opacity: pressed ? 0.7 : 1 }]}>
-              <Icon name="plus" size={22} color={t.ink} strokeWidth={2.3} />
-              <Text variant="bodyStrong">Add something to count</Text>
-            </Pressable>
+            {!filtering && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add something to count"
+                onPress={openAdd}
+                style={({ pressed }) => [styles.addRow, { borderColor: t.lineStrong, opacity: pressed ? 0.7 : 1 }]}>
+                <Icon name="plus" size={22} color={t.ink} strokeWidth={2.3} />
+                <Text variant="bodyStrong">Add something to count</Text>
+              </Pressable>
+            )}
           </ScrollView>
         )}
 
@@ -300,6 +450,9 @@ export default function Home() {
               const c = byId.get(p.id);
               if (!c) return null;
               const count = todayCounts[c.id] ?? 0;
+              const st = statFor(byCat, c.id);
+              const quiet = lens === 'quiet';
+              const sinceMs = st.last === null ? null : now.getTime() - st.last;
               return (
                 <TapBubble
                   key={c.id}
@@ -310,14 +463,18 @@ export default function Home() {
                   swatch={swatch(c.color)}
                   emoji={c.emoji}
                   name={c.name}
-                  count={count}
+                  count={quiet ? (sinceMs === null ? '–' : sinceShort(sinceMs)) : st.count}
                   todayCount={count}
-                  dimCount={count === 0}
-                  dots={todayHours[c.id] ?? []}
-                  nowHour={nowHour}
+                  dimCount={quiet ? sinceMs === null : st.count === 0}
+                  dots={range === 'today' ? (todayHours[c.id] ?? []) : undefined}
+                  nowHour={range === 'today' ? nowHour : undefined}
                   pulse={pulses[c.id] ?? 0}
                   minusPulse={minusPulses[c.id] ?? 0}
-                  label={`${c.name}, ${count} today`}
+                  label={
+                    quiet
+                      ? `${c.name}, ${sinceMs === null ? 'never logged' : `last one ${sinceShort(sinceMs)} ago`}`
+                      : `${c.name}, ${st.count} ${word}`
+                  }
                   onLog={() => onLog(c)}
                   onRemove={() => onRemove(c)}
                   onOpen={() => openCategory(c)}
@@ -479,13 +636,18 @@ function Tip({ icon, text }: { icon: IconName; text: string }) {
 function ListRow({
   category,
   count,
+  todayCount,
+  periodWord,
   last,
   onAdd,
   onRemove,
   onOpen,
 }: {
   category: Category;
+  /** in the selected period */
   count: number;
+  todayCount: number;
+  periodWord: string;
   last?: Date;
   onAdd: () => void;
   onRemove: () => void;
@@ -497,7 +659,7 @@ function ListRow({
     <View style={[styles.listRow, { backgroundColor: t.surface, borderColor: t.line }]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${category.name}, ${count} today. Open details`}
+        accessibilityLabel={`${category.name}, ${count} ${periodWord}. Open details`}
         onPress={onOpen}
         style={({ pressed }) => [styles.row, { flex: 1, gap: 12, opacity: pressed ? 0.6 : 1 }]}>
         <Bubble size={48} swatch={sw} emoji={category.emoji} />
@@ -514,7 +676,7 @@ function ListRow({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Take one ${category.name} away`}
-          disabled={count === 0}
+          disabled={todayCount === 0}
           onPress={onRemove}
           hitSlop={4}
           style={({ pressed }) => [
@@ -522,13 +684,13 @@ function ListRow({
             {
               borderColor: t.lineStrong,
               backgroundColor: t.bg,
-              opacity: count === 0 ? 0.35 : pressed ? 0.6 : 1,
+              opacity: todayCount === 0 ? 0.35 : pressed ? 0.6 : 1,
             },
           ]}>
           <Icon name="minus" size={22} color={t.ink} strokeWidth={2.6} />
         </Pressable>
         <Text
-          accessibilityLabel={`${count} today`}
+          accessibilityLabel={`${count} ${periodWord}`}
           style={{ fontFamily: font.display, fontSize: 26, color: t.ink, minWidth: 34, textAlign: 'center' }}>
           {count}
         </Text>
@@ -627,6 +789,16 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  filterEmptyBtn: {
+    marginTop: 14,
+    height: 40,
+    paddingHorizontal: 18,
+    borderRadius: radius.pill,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
