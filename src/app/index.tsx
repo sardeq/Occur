@@ -2,9 +2,9 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddBubble, Bubble } from '@/components/bubble';
@@ -35,32 +35,18 @@ import {
 } from '@/lib/home-filter';
 import { pack, radiusFor } from '@/lib/packing';
 import { setPref, usePrefs } from '@/lib/prefs';
-import {
-  addCategory,
-  deleteEvent,
-  logEvent,
-  removeLatestToday,
-  restoreEvent,
-  useData,
-  type CategoryInput,
-} from '@/lib/store';
+import { addCategory, logEvent, removeLatestToday, useData, type CategoryInput } from '@/lib/store';
 import { isSuggestionUsed, localSuggestions } from '@/lib/suggestions';
 import { DAY, formatTime, startOfDay } from '@/lib/time';
-import type { Category, OccurEvent } from '@/lib/types';
+import type { Category } from '@/lib/types';
 import { font, radius, useTheme } from '@/theme';
 import { swatch } from '@/theme/palette';
 
 const ADD = '__add__';
-/** how long the "Undo" bar stays up — long enough to read and reach */
-const TOAST_MS = 8000;
 /** show the "more ideas" strip until the home screen has this many bubbles */
 const IDEAS_UNTIL = 4;
 /** height of the bottom "Ask" pill and its + button */
 const ASK_H = 46;
-
-type Toast =
-  | { kind: 'add'; key: string; event: OccurEvent; category: Category; count: number }
-  | { kind: 'remove'; key: string; event: OccurEvent; category: Category; count: number };
 
 const haptic = (type: 'log' | 'remove') => {
   if (Platform.OS === 'web') return;
@@ -85,7 +71,6 @@ export default function Home() {
   const [field, setField] = useState({ w: 0, h: 0 });
   const [pulses, setPulses] = useState<Record<string, number>>({});
   const [minusPulses, setMinusPulses] = useState<Record<string, number>>({});
-  const [toast, setToast] = useState<Toast | null>(null);
   // filter bar: period the bubbles count over + what's shown
   const [range, setRange] = useState<HomeRange>('today');
   const [lens, setLens] = useState<Lens | null>(null);
@@ -210,19 +195,12 @@ export default function Home() {
     return pack(items, field.w, viewH, { gap: 16, pad: 18 });
   }, [visible, filtering, sizeWeights, field.w, field.h, bottomBarH, ideasH]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), TOAST_MS);
-    return () => clearTimeout(id);
-  }, [toast]);
-
   const nowHour = now.getHours() + now.getMinutes() / 60;
 
   const onLog = (c: Category) => {
-    const e = logEvent(c.id);
+    logEvent(c.id);
     haptic('log');
     setPulses((p) => ({ ...p, [c.id]: (p[c.id] ?? 0) + 1 }));
-    setToast({ kind: 'add', key: e.id, event: e, category: c, count: (todayCounts[c.id] ?? 0) + 1 });
   };
 
   const onRemove = (c: Category) => {
@@ -230,21 +208,6 @@ export default function Home() {
     if (!e) return;
     haptic('remove');
     setMinusPulses((p) => ({ ...p, [c.id]: (p[c.id] ?? 0) + 1 }));
-    setToast({
-      kind: 'remove',
-      key: `rm-${e.id}`,
-      event: e,
-      category: c,
-      count: Math.max(0, (todayCounts[c.id] ?? 1) - 1),
-    });
-  };
-
-  const undo = () => {
-    if (!toast) return;
-    if (toast.kind === 'add') deleteEvent(toast.event.id);
-    else restoreEvent(toast.event);
-    haptic('remove');
-    setToast(null);
   };
 
   const openCategory = (c: Category) => router.push({ pathname: '/category/[id]', params: { id: c.id } });
@@ -484,7 +447,7 @@ export default function Home() {
           locations={[0, 0.4]}
         />
 
-        {!toast && homeStyle === 'bubbles' && moreIdeas.length > 0 && (
+        {homeStyle === 'bubbles' && moreIdeas.length > 0 && (
           <View style={{ marginBottom: 8 }}>
             <Text
               style={{
@@ -520,41 +483,6 @@ export default function Home() {
               ))}
             </ScrollView>
           </View>
-        )}
-
-        {toast && (
-          <Animated.View
-            key={toast.key}
-            entering={FadeInDown.springify().damping(16)}
-            exiting={FadeOutDown.duration(180)}
-            style={[styles.toast, { backgroundColor: t.surface, borderColor: t.line, shadowColor: t.shadow }]}>
-            <Text style={{ fontSize: 20 }}>{toast.category.emoji}</Text>
-            <Pressable
-              style={{ flex: 1 }}
-              accessibilityRole="button"
-              accessibilityLabel={str.openName(toast.category.name)}
-              onPress={() => {
-                setToast(null);
-                openCategory(toast.category);
-              }}>
-              <Text variant="label" numberOfLines={1}>
-                {toast.kind === 'add' ? str.toastAdded(toast.category.name) : str.toastRemoved(toast.category.name)}
-              </Text>
-              <Text style={{ fontFamily: font.medium, fontSize: 13, color: t.inkSoft }} numberOfLines={1}>
-                {toast.kind === 'add' ? `${formatTime(new Date(toast.event.occurredAt))} · ` : ''}
-                {str.toastToday(toast.count)}
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={str.undo}
-              onPress={undo}
-              hitSlop={10}
-              style={({ pressed }) => [styles.undo, { backgroundColor: t.pill, opacity: pressed ? 0.8 : 1 }]}>
-              <Icon name="undo" size={15} color={t.pillInk} strokeWidth={2.3} />
-              <Text style={{ fontFamily: font.bold, fontSize: 14, color: t.pillInk }}>{str.undo}</Text>
-            </Pressable>
-          </Animated.View>
         )}
 
         <View style={[styles.row, { gap: 8, paddingHorizontal: 16 }]}>
@@ -756,29 +684,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth * 2,
-  },
-  toast: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth * 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-    paddingStart: 14,
-    paddingEnd: 8,
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-  },
-  undo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    height: 34,
-    paddingHorizontal: 14,
-    borderRadius: 17,
   },
   listRow: {
     flexDirection: 'row',

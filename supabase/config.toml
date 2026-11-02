@@ -3,4 +3,5 @@
 project_id = "occur"
 
 [functions.ask]
-verify_jwt = true
+# the function verifies the user itself (see supabase/functions/ask/index.ts)
+verify_jwt = false

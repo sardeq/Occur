@@ -12,7 +12,8 @@ import { parseQuestion } from './parse-local';
 import { sanitizeSpec } from './sanitize';
 import type { AiIssue, Answer, QuerySpec } from './types';
 
-const TIMEOUT_MS = 9000;
+// the function may retry a rate-limited free model once, so allow a little longer
+const TIMEOUT_MS = 14_000;
 
 /**
  * Name of the edge function. Defaults to "ask"; set EXPO_PUBLIC_ASK_FUNCTION if

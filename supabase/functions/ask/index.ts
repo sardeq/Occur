@@ -9,9 +9,13 @@
 // LLM: OpenRouter (any model it offers).
 // Secrets:
 //   OPENROUTER_API_KEY   required
-//   LLM_MODEL            optional, default "google/gemini-3.6-flash"
+//   LLM_MODEL            optional, default "google/gemini-3.6-flash". May be a
+//                        comma-separated list: OpenRouter falls back down the list
+//                        (handy for rate-limited ":free" models).
 //
-// JWT verification stays on, so only signed-in users can call it.
+// Only signed-in users can call it: the function checks the caller's token with
+// Supabase Auth itself (deploy with --no-verify-jwt; the gateway's legacy JWT
+// check doesn't understand the project's newer asymmetric signing keys).
 
 type AskRequest = {
   question: string;
@@ -131,16 +135,36 @@ function validate(body: unknown): AskRequest | string {
   };
 }
 
+/** True when the Authorization header belongs to a signed-in user. */
+async function isSignedIn(req: Request): Promise<boolean> {
+  const auth = req.headers.get('Authorization') ?? '';
+  if (!/^Bearer\s+\S+/.test(auth)) return false;
+  const url = Deno.env.get('SUPABASE_URL');
+  const apikey = Deno.env.get('SUPABASE_ANON_KEY') ?? req.headers.get('apikey') ?? '';
+  if (!url) return false;
+  try {
+    const res = await fetch(`${url}/auth/v1/user`, { headers: { Authorization: auth, apikey } });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** OpenRouter's OpenAI-compatible chat completions endpoint. */
 async function callOpenRouter(system: string, user: string) {
   const key = Deno.env.get('OPENROUTER_API_KEY');
   if (!key) throw new Error('OPENROUTER_API_KEY is not set');
-  const model = Deno.env.get('LLM_MODEL') || MODEL_DEFAULT;
+  const models = (Deno.env.get('LLM_MODEL') || MODEL_DEFAULT)
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const model = models[0];
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 12_000);
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const send = () =>
+    fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       signal: ctrl.signal,
       headers: {
@@ -149,7 +173,7 @@ async function callOpenRouter(system: string, user: string) {
         'X-Title': 'Occur',
       },
       body: JSON.stringify({
-        model,
+        ...(models.length > 1 ? { models } : { model }),
         temperature: 0,
         max_tokens: 500,
         response_format: { type: 'json_object' },
@@ -159,8 +183,18 @@ async function callOpenRouter(system: string, user: string) {
         ],
       }),
     });
+  try {
+    let res = await send();
+    // free models are often briefly rate-limited upstream: one quick retry
+    if (res.status === 429) {
+      await new Promise((r) => setTimeout(r, 1200));
+      res = await send();
+    }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${data?.error?.message ?? res.statusText}`);
+    if (!res.ok)
+      throw new Error(
+        `OpenRouter ${res.status}: ${data?.error?.message ?? res.statusText}${data?.error?.metadata?.raw ? ` (${String(data.error.metadata.raw).slice(0, 200)})` : ''}`,
+      );
     const content = data?.choices?.[0]?.message?.content;
     const text =
       typeof content === 'string'
@@ -187,6 +221,7 @@ function extractJson(text: string): unknown {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  if (!(await isSignedIn(req))) return json({ error: 'Sign in to ask the AI' }, 401);
 
   let body: unknown;
   try {

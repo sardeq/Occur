@@ -31,11 +31,7 @@ export const homeStrings = defineStrings(
     moreIdeas: 'More ideas — tap to add',
     addName: (name: string) => `Add ${name}`,
 
-    toastAdded: (name: string) => `Added ${name}`,
-    toastRemoved: (name: string) => `Took one ${name} away`,
-    toastToday: (count: number) => `${count} today`,
     openName: (name: string) => `Open ${name}`,
-    undo: 'Undo',
 
     askA11y: 'Ask a question about your history',
     askPlaceholder: 'Ask a question…',
@@ -76,11 +72,7 @@ export const homeStrings = defineStrings(
     moreIdeas: 'أفكار أخرى — اضغط للإضافة',
     addName: (name) => `إضافة ${name}`,
 
-    toastAdded: (name) => `أُضيف ${name}`,
-    toastRemoved: (name) => `حُذفت واحدة من ${name}`,
-    toastToday: (count) => `${count} اليوم`,
     openName: (name) => `فتح ${name}`,
-    undo: 'تراجع',
 
     askA11y: 'اسأل عن سجلّك',
     askPlaceholder: 'اطرح سؤالًا…',
