@@ -14,6 +14,8 @@ export const askStrings = defineStrings(
     thinking: 'Looking through your log…',
     sourceAi: 'AI read the question',
     sourceDevice: 'Parsed on device',
+    aiSignedOut: 'AI needs sign-in',
+    aiUnavailable: 'AI unavailable',
     error: 'Something went wrong.',
   },
   {
@@ -28,6 +30,8 @@ export const askStrings = defineStrings(
     thinking: 'أبحث في سجلّك…',
     sourceAi: 'قرأ الذكاء الاصطناعي السؤال',
     sourceDevice: 'فُهم على الجهاز',
+    aiSignedOut: 'الذكاء الاصطناعي يتطلب تسجيل الدخول',
+    aiUnavailable: 'الذكاء الاصطناعي غير متاح',
     error: 'حدث خطأ ما.',
   },
 );

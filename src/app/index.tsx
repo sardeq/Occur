@@ -283,13 +283,13 @@ export default function Home() {
             </Animated.View>
           )}
         </View>
-        <View style={[styles.row, { gap: 6, alignItems: 'flex-start' }]}>
+        <View style={[styles.row, { gap: 10 }]}>
           <HeaderButton icon="chart" label={str.insights} onPress={() => router.push('/insights')} />
           <HeaderButton label={str.settings} a11y={str.settingsA11y} onPress={() => router.push('/settings')}>
             {user?.avatarUrl ? (
-              <Image source={{ uri: user.avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
+              <Image source={{ uri: user.avatarUrl }} style={{ width: 44, height: 44 }} contentFit="cover" />
             ) : (
-              <Icon name="gear" size={19} color={t.ink} />
+              <Icon name="gear" size={20} color={t.ink} />
             )}
           </HeaderButton>
         </View>
@@ -581,7 +581,7 @@ export default function Home() {
   );
 }
 
-/** Icon button with its name written underneath. */
+/** Round icon button; its name is read out by screen readers. */
 function HeaderButton({
   icon,
   label,
@@ -607,9 +607,8 @@ function HeaderButton({
       }}
       style={({ pressed }) => [styles.headerBtn, { transform: [{ scale: pressed ? 0.94 : 1 }] }]}>
       <View style={[styles.headerDisc, { backgroundColor: t.surface, borderColor: t.line }]}>
-        {children ?? (icon ? <Icon name={icon} size={19} color={t.ink} /> : null)}
+        {children ?? (icon ? <Icon name={icon} size={20} color={t.ink} /> : null)}
       </View>
-      <Text style={{ fontFamily: font.semibold, fontSize: 11, color: t.inkSoft, marginTop: 2 }}>{label}</Text>
     </Pressable>
   );
 }
@@ -708,12 +707,12 @@ function ListRow({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center' },
-  header: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingBottom: 4, zIndex: 2 },
-  headerBtn: { alignItems: 'center', minWidth: 50 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 4, zIndex: 2 },
+  headerBtn: { alignItems: 'center' },
   headerDisc: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -723,7 +722,6 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    marginTop: 5,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',
     justifyContent: 'center',

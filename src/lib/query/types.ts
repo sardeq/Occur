@@ -81,5 +81,15 @@ export type Answer = {
   /** Human readable chips: what the question was understood as. */
   interpretation: string[];
   source: 'ai' | 'device';
+  /** why the AI wasn't used, when it was supposed to be */
+  aiIssue?: AiIssue;
   spec: QuerySpec;
 };
+
+/**
+ * signedOut: demo mode / no session, so the edge function can't be called.
+ * missing: the "ask" function isn't deployed under that name (404).
+ * failed: it answered with an error (auth, model, key…) or an unusable spec.
+ * timeout: no reply in time.
+ */
+export type AiIssue = 'signedOut' | 'missing' | 'failed' | 'timeout';

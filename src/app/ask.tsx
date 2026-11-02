@@ -71,6 +71,14 @@ function AnswerCard({ a }: { a: Answer }) {
             {a.source === 'ai' ? S.sourceAi : S.sourceDevice}
           </Text>
         </View>
+        {a.aiIssue && (
+          <View style={[styles.chip, styles.row, { gap: 4, maxWidth: '100%', backgroundColor: t.bad + '14' }]}>
+            <Icon name="cloudOff" size={11} color={t.bad} />
+            <Text variant="caption" color={t.bad} style={{ flexShrink: 1 }}>
+              {a.aiIssue === 'signedOut' ? S.aiSignedOut : S.aiUnavailable}
+            </Text>
+          </View>
+        )}
       </View>
     </Animated.View>
   );
