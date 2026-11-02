@@ -4,7 +4,9 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Bars } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
+import { componentStrings } from '@/i18n/home';
 import type { Tile } from '@/lib/home-filter';
+import { useStrings } from '@/lib/i18n';
 import type { Category } from '@/lib/types';
 import { font, radius, useTheme } from '@/theme';
 import { swatch } from '@/theme/palette';
@@ -25,6 +27,7 @@ export function FocusCard({
   onOpen: () => void;
 }) {
   const t = useTheme();
+  const s = useStrings(componentStrings);
   const sw = swatch(category.color);
   return (
     <Animated.View
@@ -55,18 +58,18 @@ export function FocusCard({
         ))}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Open ${category.name} details`}
+          accessibilityLabel={s.openDetails(category.name)}
           onPress={onOpen}
           style={({ pressed }) => [
             styles.tile,
             styles.more,
             { borderColor: t.lineStrong, opacity: pressed ? 0.6 : 1 },
           ]}>
-          <Text style={{ fontFamily: font.bold, fontSize: 13, color: t.ink }}>More</Text>
+          <Text style={{ fontFamily: font.bold, fontSize: 13, color: t.ink }}>{s.more}</Text>
           <Icon name="chevron" size={13} color={t.ink} strokeWidth={2.6} />
         </Pressable>
       </ScrollView>
-      <View style={{ marginTop: 8 }} accessible accessibilityLabel={`${category.name} per period chart`}>
+      <View style={{ marginTop: 8 }} accessible accessibilityLabel={s.periodChart(category.name)}>
         <Bars values={series.values} labels={series.labels} highlight={series.highlight} color={sw.deep} height={58} />
       </View>
     </Animated.View>

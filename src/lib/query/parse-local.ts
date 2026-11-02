@@ -3,7 +3,12 @@
  * English to QuerySpec. It handles the common shapes ("how many … last 30
  * days", "when do I … the most", "when did I last …") with zero latency and
  * no network, and is the fallback whenever the LLM is unavailable.
+ *
+ * Arabic questions are first rewritten into the English keywords below by a
+ * small phrase table (`arabicToKeywords`), so the common shapes — and every
+ * suggested question — also work offline. Anything fancier goes to the LLM.
  */
+import { getLang } from '../i18n';
 import { MONTHS_LONG, addDays, dayKey, startOfDay } from '../time';
 import type { GroupBy, Intent, QueryFilter, QuerySpec, RangeSpec } from './types';
 
@@ -369,15 +374,129 @@ export function normalizeQuestion(question: string): string {
     .trim();
 }
 
+const AR_LETTER = '\u0600-\u06FF';
+const AR_RE = new RegExp(`[${AR_LETTER}]`);
+/** optional attached prefix (و/ب/ل/ف/ك) and "not inside another Arabic word" */
+const arPhrase = (p: string) => new RegExp(`(?<![${AR_LETTER}])(?:[وبلفك])?${p}(?![${AR_LETTER}])`, 'g');
+
+/**
+ * Arabic phrase → English keywords the rules below understand. Order matters:
+ * longer phrases first ("نهاية الأسبوع" before "الأسبوع").
+ */
+const ARABIC_PHRASES: [string, string][] = [
+  ['عطلة نهاية الأسبوع', ' weekends '],
+  ['نهاية الأسبوع', ' weekends '],
+  ['أيام العمل', ' weekdays '],
+  ['أي وقت من اليوم', ' what time of day '],
+  ['وقت من اليوم', ' time of day '],
+  ['هذا الأسبوع', ' this week '],
+  ['الأسبوع الماضي', ' last week '],
+  ['هذا الشهر', ' this month '],
+  ['الشهر الماضي', ' last month '],
+  ['هذه السنة', ' this year '],
+  ['هذا العام', ' this year '],
+  ['السنة الماضية', ' last year '],
+  ['العام الماضي', ' last year '],
+  ['أي وقت', ' what time '],
+  ['أي ساعة', ' what time '],
+  ['أي يوم', ' which day '],
+  ['أي شهر', ' which month '],
+  ['أي عادة', ' which habit '],
+  ['أي فئة', ' which habit '],
+  ['أي شيء', ' which thing '],
+  ['آخر مرة', ' last time '],
+  ['أول مرة', ' first time '],
+  ['كم مرة', ' how many times '],
+  ['كم عدد', ' how many '],
+  ['في المتوسط', ' average '],
+  ['المتوسط', ' average '],
+  ['متوسط', ' average '],
+  ['معدل', ' average '],
+  ['في اليوم', ' per day '],
+  ['يوميًا', ' per day '],
+  ['يوميا', ' per day '],
+  ['في الأسبوع', ' per week '],
+  ['أسبوعيًا', ' per week '],
+  ['في الشهر', ' per month '],
+  ['شهريًا', ' per month '],
+  ['اليوم', ' today '],
+  ['أمس', ' yesterday '],
+  ['البارحة', ' yesterday '],
+  ['على الإطلاق', ' ever '],
+  ['منذ البداية', ' ever '],
+  ['أطول انقطاع', ' longest break '],
+  ['أطول استراحة', ' longest break '],
+  ['انقطاع', ' break '],
+  ['بدون', ' without '],
+  ['سلسلة', ' streak '],
+  ['متتالية', ' in a row '],
+  ['قارن', ' compare '],
+  ['مقارنة', ' compare '],
+  ['مقابل', ' vs '],
+  ['الأكثر', ' most '],
+  ['أكثر', ' most '],
+  ['عادةً', ' usually '],
+  ['عادة', ' usually '],
+  ['متى', ' when '],
+  ['صباحًا', ' morning '],
+  ['الصباح', ' morning '],
+  ['بعد الظهر', ' afternoon '],
+  ['مساءً', ' evening '],
+  ['المساء', ' evening '],
+  ['ليلًا', ' night '],
+  ['الليل', ' night '],
+  ['اعرض', ' show '],
+];
+
+const AR_UNITS: [RegExp, string][] = [
+  [/^(يوم|يومًا|يوما|أيام)$/, 'days'],
+  [/^(أسبوع|أسبوعًا|أسابيع)$/, 'weeks'],
+  [/^(شهر|شهرًا|أشهر|شهور)$/, 'months'],
+  [/^(سنة|سنوات|عام|أعوام)$/, 'years'],
+];
+
+/**
+ * Rewrites an Arabic question into English keywords. Category names are kept
+ * as they are (they're matched against the original text too).
+ */
+/** Drop tashkeel and tatweel so "سجّلت" matches "سجلت". */
+const stripMarks = (s: string) => s.replace(/[\u064B-\u0652\u0640]/g, '');
+
+export function arabicToKeywords(text: string): string {
+  let q = stripMarks(text)
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[؟،؛]/g, ' ');
+  // "آخر 30 يومًا", "خلال آخر 7 أيام", "آخر يومين/أسبوعين/شهرين"
+  q = q.replace(new RegExp(`(?:خلال |في )?آخر (\\d+) ([${AR_LETTER}]+)`, 'g'), (m, n: string, unit: string) => {
+    const u = AR_UNITS.find(([re]) => re.test(unit));
+    return u ? ` last ${n} ${u[1]} ` : m;
+  });
+  q = q
+    .replace(new RegExp(`(?:خلال |في )?آخر (يومين|أسبوعين|شهرين)`, 'g'), (_m, d: string) =>
+      d === 'يومين' ? ' last 2 days ' : d === 'أسبوعين' ? ' last 2 weeks ' : ' last 2 months ',
+    )
+    .replace(new RegExp(`(?:خلال |في )?آخر (أسبوع|شهر|سنة)(?![${AR_LETTER}])`, 'g'), (_m, d: string) =>
+      d === 'أسبوع' ? ' past week ' : d === 'شهر' ? ' past month ' : ' past year ',
+    );
+  for (const [ar, en] of ARABIC_PHRASES) q = q.replace(arPhrase(ar), en);
+  return q;
+}
+
 export function parseQuestion(question: string, categories: CategoryLite[], now: Date = new Date()): QuerySpec {
-  const q = normalizeQuestion(question);
+  const arabic = AR_RE.test(question);
+  const q = normalizeQuestion(arabic ? arabicToKeywords(question) : question);
   const ranges = findRanges(q, now);
   // text with time phrases removed, used for groupBy and subject detection
   let rest = q;
   for (const r of [...ranges].reverse()) rest = rest.slice(0, r.start) + ' ' + rest.slice(r.end);
 
   const { intent, groupBy, per } = detectIntent(q, rest, ranges.length);
-  const categoryIds = intent === 'ranking' ? [] : matchCategories(q, categories);
+  let categoryIds = intent === 'ranking' ? [] : matchCategories(q, categories);
+  // Arabic category names may contain words the phrase table rewrote
+  if (arabic && intent !== 'ranking') {
+    const direct = matchCategories(normalizeQuestion(stripMarks(question)), categories);
+    categoryIds = [...new Set([...categoryIds, ...direct])];
+  }
 
   let unmatched: string | undefined;
   if (!categoryIds.length && intent !== 'ranking' && !GENERIC.test(q)) {
@@ -400,6 +519,16 @@ export function parseQuestion(question: string, categories: CategoryLite[], now:
 export function suggestQuestions(categories: CategoryLite[]): string[] {
   if (!categories.length) return [];
   const [a, b = a, c = a] = categories.map((x) => x.name.toLowerCase());
+  // every one of these parses on device too (see arabicToKeywords)
+  if (getLang() === 'ar')
+    return [
+      `كم مرة سجّلت ${a} خلال آخر 30 يومًا؟`,
+      `في أي وقت من اليوم أسجّل ${a} أكثر؟`,
+      `متى آخر مرة سجّلت ${b}؟`,
+      `قارن ${c} هذا الأسبوع مقابل الأسبوع الماضي`,
+      `أي عادة سجّلتها أكثر هذا الشهر؟`,
+      `أطول انقطاع عن ${a}؟`,
+    ];
   return [
     `How many times did I log ${a} in the last 30 days?`,
     `What time of day do I log ${a} most?`,

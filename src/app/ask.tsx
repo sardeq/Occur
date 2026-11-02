@@ -1,33 +1,27 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-  type ScrollViewInstance,
-} from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View, type ScrollViewInstance } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { NavButton, RoundButton, tapHaptic } from '@/components/buttons';
+import { NavButton, tapHaptic } from '@/components/buttons';
 import { Bars } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
+import { askStrings } from '@/i18n/ask';
+import { getLang, useStrings } from '@/lib/i18n';
 import { ask } from '@/lib/query/ask';
 import { suggestQuestions } from '@/lib/query/parse-local';
 import type { Answer } from '@/lib/query/types';
 import { useData } from '@/lib/store';
-import { font, radius, useTheme } from '@/theme';
+import { font, radius, useFont, useTheme } from '@/theme';
 import { swatch } from '@/theme/palette';
 
 type Turn = { id: number; question: string; answer?: Answer; error?: string };
 
 function AnswerCard({ a }: { a: Answer }) {
   const t = useTheme();
+  const S = useStrings(askStrings);
   const color = a.chart?.color ? swatch(a.chart.color).deep : t.ink;
   return (
     <Animated.View
@@ -74,7 +68,7 @@ function AnswerCard({ a }: { a: Answer }) {
           style={[styles.chip, styles.row, { gap: 4, borderWidth: StyleSheet.hairlineWidth * 2, borderColor: t.line }]}>
           <Icon name={a.source === 'ai' ? 'sparkle' : 'check'} size={11} color={t.inkFaint} />
           <Text variant="caption" tone="faint">
-            {a.source === 'ai' ? 'AI read the question' : 'Parsed on device'}
+            {a.source === 'ai' ? S.sourceAi : S.sourceDevice}
           </Text>
         </View>
       </View>
@@ -84,13 +78,14 @@ function AnswerCard({ a }: { a: Answer }) {
 
 function Thinking() {
   const t = useTheme();
+  const S = useStrings(askStrings);
   return (
     <Animated.View
       entering={FadeIn}
       style={[styles.answer, styles.row, { backgroundColor: t.surface, borderColor: t.line, gap: 8 }]}>
       <Icon name="sparkle" size={16} color={t.inkSoft} />
       <Text variant="subheading" tone="soft">
-        Looking through your log…
+        {S.thinking}
       </Text>
     </Animated.View>
   );
@@ -98,6 +93,8 @@ function Thinking() {
 
 export default function Ask() {
   const t = useTheme();
+  const f = useFont();
+  const S = useStrings(askStrings);
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ q?: string; about?: string }>();
   const categories = useData((s) => s.categories);
@@ -128,7 +125,9 @@ export default function Ask() {
       const answer = await ask(question, { categories, events });
       setTurns((ts) => ts.map((x) => (x.id === id ? { ...x, answer } : x)));
     } catch (e: any) {
-      setTurns((ts) => ts.map((x) => (x.id === id ? { ...x, error: e?.message ?? 'Something went wrong.' } : x)));
+      setTurns((ts) =>
+        ts.map((x) => (x.id === id ? { ...x, error: (getLang() === 'en' && e?.message) || S.error } : x)),
+      );
     } finally {
       setBusy(false);
     }
@@ -139,37 +138,67 @@ export default function Ask() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // newest answer sits right under the box
   useEffect(() => {
-    const id = setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 80);
+    const id = setTimeout(() => scroll.current?.scrollTo({ y: 0, animated: true }), 80);
     return () => clearTimeout(id);
   }, [turns]);
 
+  const canSend = input.trim().length > 0 && !busy;
+
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: t.bg }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+      {/* the question box is the header */}
       <View style={[styles.topbar, { paddingTop: Platform.OS === 'ios' ? 14 : insets.top + 8 }]}>
-        <View style={{ flex: 1 }}>
-          <Text variant="eyebrow" tone="soft">
-            Ask
-          </Text>
-          <Text variant="title">Your history</Text>
+        <View
+          style={[styles.inputWrap, { backgroundColor: t.surface, borderColor: t.lineStrong, shadowColor: t.shadow }]}>
+          <Icon name="sparkle" size={16} color={t.inkSoft} />
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder={S.placeholder}
+            placeholderTextColor={t.inkFaint}
+            style={[
+              styles.input,
+              { color: t.ink, fontFamily: f.medium, textAlign: getLang() === 'ar' ? 'right' : 'left' },
+            ]}
+            returnKeyType="send"
+            onSubmitEditing={() => submit(input)}
+            autoFocus={!params.q}
+            accessibilityLabel={S.questionA11y}
+            maxLength={300}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={S.send}
+            accessibilityState={{ disabled: !canSend }}
+            disabled={!canSend}
+            onPress={() => submit(input)}
+            hitSlop={6}
+            style={({ pressed }) => [
+              styles.send,
+              {
+                backgroundColor: canSend ? t.pill : t.surfaceAlt,
+                transform: [{ scale: pressed ? 0.92 : 1 }],
+              },
+            ]}>
+            <Icon name="send" size={17} color={canSend ? t.pillInk : t.inkFaint} strokeWidth={2.4} />
+          </Pressable>
         </View>
-        <NavButton icon="close" label="Close" onPress={() => router.back()} />
+        <NavButton icon="close" label={S.close} onPress={() => router.back()} />
       </View>
 
       <ScrollView
         ref={scroll}
-        contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 12 }}
-        keyboardShouldPersistTaps="handled">
+        contentContainerStyle={{ padding: 16, paddingTop: 10, paddingBottom: insets.bottom + 24, gap: 18 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
         {turns.length === 0 && (
           <Animated.View entering={FadeInDown.duration(400)}>
-            <Text variant="heading" style={{ fontSize: 26, lineHeight: 31 }}>
-              {categories.length
-                ? 'Ask in your own words — how many, when, how often, compared to when.'
-                : 'Add a bubble and log a few things first, then ask me about them.'}
+            <Text variant="subheading" tone="soft" style={{ marginStart: 4 }}>
+              {categories.length ? S.intro : S.introEmpty}
             </Text>
-            <View style={{ gap: 8, marginTop: 18 }}>
+            <View style={{ gap: 8, marginTop: 14 }}>
               {suggestions.map((s) => (
                 <Pressable
                   key={s}
@@ -189,14 +218,13 @@ export default function Ask() {
             <View style={[styles.note, { borderColor: t.line }]}>
               <Icon name="check" size={14} color={t.inkSoft} />
               <Text variant="caption" tone="soft" style={{ flex: 1 }}>
-                Every number is counted on your phone from your own log. The AI only ever sees your question and the
-                names of your bubbles — never your history.
+                {S.privacy}
               </Text>
             </View>
           </Animated.View>
         )}
 
-        {turns.map((turn) => (
+        {[...turns].reverse().map((turn) => (
           <View key={turn.id} style={{ gap: 10 }}>
             <Animated.View
               entering={FadeInDown.springify().damping(18)}
@@ -217,33 +245,29 @@ export default function Ask() {
           </View>
         ))}
       </ScrollView>
-
-      <View
-        style={[
-          styles.inputBar,
-          { paddingBottom: Math.max(insets.bottom, 12), borderTopColor: t.line, backgroundColor: t.bg },
-        ]}>
-        <TextInput
-          value={input}
-          onChangeText={setInput}
-          placeholder="How many times did I…"
-          placeholderTextColor={t.inkFaint}
-          style={[styles.input, { color: t.ink, backgroundColor: t.surface, borderColor: t.line }]}
-          returnKeyType="send"
-          onSubmitEditing={() => submit(input)}
-          autoFocus={!params.q}
-          accessibilityLabel="Question"
-          maxLength={300}
-        />
-        <RoundButton icon="send" label="Ask" tone="ink" size={48} onPress={() => submit(input)} />
-      </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
-  topbar: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 20, paddingBottom: 6 },
+  topbar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingBottom: 8 },
+  inputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 54,
+    borderRadius: 27,
+    paddingStart: 18,
+    paddingEnd: 6,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  send: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   suggestion: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -268,32 +292,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 11,
     borderRadius: 22,
-    borderBottomRightRadius: 6,
+    borderBottomEndRadius: 6,
   },
   answer: {
     alignSelf: 'stretch',
     padding: 18,
     borderRadius: radius.lg,
-    borderTopLeftRadius: 8,
+    borderTopStartRadius: 8,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 14 },
   chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill },
-  inputBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth * 2,
-  },
   input: {
     flex: 1,
-    height: 48,
-    borderRadius: 24,
-    paddingHorizontal: 18,
+    // let it shrink below the browser's default input width so the icon and send button keep their room
+    minWidth: 0,
+    height: '100%',
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null),
     fontFamily: font.medium,
     fontSize: 16,
-    borderWidth: StyleSheet.hairlineWidth * 2,
   },
 });

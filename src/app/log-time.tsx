@@ -6,6 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Chip, PillButton } from '@/components/buttons';
 import { Text } from '@/components/text';
+import { editingStrings } from '@/i18n/editing';
+import { useStrings } from '@/lib/i18n';
 import { logEvent, updateEvent, useData } from '@/lib/store';
 import { HOUR, MINUTE, addDays, formatDayLabel, formatTime, startOfDay } from '@/lib/time';
 import { useTheme } from '@/theme';
@@ -14,6 +16,7 @@ import { useTheme } from '@/theme';
 export default function LogTime() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const S = useStrings(editingStrings);
   const { categoryId, eventId } = useLocalSearchParams<{ categoryId: string; eventId?: string }>();
   const cat = useData((s) => s.categories.find((c) => c.id === categoryId));
   const existing = useData((s) => (eventId ? s.events.find((e) => e.id === eventId) : undefined));
@@ -23,11 +26,11 @@ export default function LogTime() {
 
   const now = new Date();
   const presets = [
-    { label: '15 min ago', at: new Date(now.getTime() - 15 * MINUTE) },
-    { label: '1 hour ago', at: new Date(now.getTime() - HOUR) },
-    { label: '3 hours ago', at: new Date(now.getTime() - 3 * HOUR) },
-    { label: 'This morning', at: new Date(startOfDay(now).getTime() + 9 * HOUR) },
-    { label: 'Last night', at: new Date(addDays(startOfDay(now), -1).getTime() + 22 * HOUR) },
+    { label: S.min15, at: new Date(now.getTime() - 15 * MINUTE) },
+    { label: S.hour1, at: new Date(now.getTime() - HOUR) },
+    { label: S.hours3, at: new Date(now.getTime() - 3 * HOUR) },
+    { label: S.thisMorning, at: new Date(startOfDay(now).getTime() + 9 * HOUR) },
+    { label: S.lastNight, at: new Date(addDays(startOfDay(now), -1).getTime() + 22 * HOUR) },
   ].filter((p) => p.at <= now);
 
   const save = () => {
@@ -46,10 +49,10 @@ export default function LogTime() {
           {cat ? `${cat.emoji}  ${cat.name}` : ''}
         </Text>
         <Text variant="title" style={{ marginTop: 6 }}>
-          {existing ? 'Move this entry' : 'When did it happen?'}
+          {existing ? S.moveEntry : S.whenHappened}
         </Text>
         <Text variant="body" tone="soft" style={{ marginTop: 4 }}>
-          {formatDayLabel(date)} at {formatTime(date)}
+          {S.dayAt(formatDayLabel(date), formatTime(date))}
         </Text>
 
         {!existing && (
@@ -82,7 +85,7 @@ export default function LogTime() {
           />
         </View>
 
-        <PillButton label={existing ? 'Save time' : 'Log it'} icon="check" onPress={save} style={{ marginTop: 16 }} />
+        <PillButton label={existing ? S.saveTime : S.logIt} icon="check" onPress={save} style={{ marginTop: 16 }} />
       </ScrollView>
     </View>
   );

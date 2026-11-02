@@ -1,5 +1,7 @@
 import Svg, { Circle, Path } from 'react-native-svg';
 
+import { useLang } from '@/lib/i18n';
+
 export type IconName =
   | 'plus'
   | 'chart'
@@ -24,12 +26,17 @@ export type IconName =
   | 'phone'
   | 'list'
   | 'bubbles'
-  | 'gear';
+  | 'gear'
+  | 'globe';
+
+/** Icons that point along the reading direction get mirrored in Arabic. */
+const DIRECTIONAL = new Set<IconName>(['back', 'chevron', 'undo']);
 
 type Props = { name: IconName; size?: number; color: string; strokeWidth?: number };
 
 /** A tiny hand-drawn icon set (24×24, round strokes) so the look stays consistent everywhere. */
 export function Icon({ name, size = 22, color, strokeWidth = 1.9 }: Props) {
+  const flip = useLang() === 'ar' && DIRECTIONAL.has(name);
   const s = {
     stroke: color,
     strokeWidth,
@@ -38,7 +45,16 @@ export function Icon({ name, size = 22, color, strokeWidth = 1.9 }: Props) {
     fill: 'none',
   };
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Svg width={size} height={size} viewBox="0 0 24 24" style={flip ? { transform: [{ scaleX: -1 }] } : undefined}>
+      {name === 'globe' && (
+        <>
+          <Circle cx={12} cy={12} r={8.5} {...s} />
+          <Path
+            d="M3.5 12h17M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5s1.1-6.1 3.5-8.5z"
+            {...s}
+          />
+        </>
+      )}
       {name === 'plus' && <Path d="M12 5v14M5 12h14" {...s} />}
       {name === 'chart' && <Path d="M5 20v-8M12 20V5M19 20v-5" {...s} />}
       {name === 'back' && <Path d="M15 5l-7 7 7 7" {...s} />}

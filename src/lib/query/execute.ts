@@ -2,6 +2,8 @@
  * Deterministic executor: QuerySpec + events → Answer.
  * This is the only place numbers in answers come from.
  */
+import { queryStrings } from '../../i18n/query';
+import { getLang, strings } from '../i18n';
 import {
   argmax,
   countsByDay,
@@ -16,11 +18,9 @@ import {
 } from '../stats';
 import {
   DAY,
-  MONTHS_LONG,
   MONTHS_SHORT,
-  WEEKDAYS_LONG,
-  WEEKDAYS_SHORT,
   addDays,
+  calendarDaysBetween,
   dayKey,
   formatDate,
   formatDayLabel,
@@ -29,9 +29,13 @@ import {
   formatHourCompact,
   formatRelative,
   formatTime,
+  monthLong,
+  monthShort,
   parseDayKey,
   startOfDay,
   startOfWeek,
+  weekdayInitial,
+  weekdayLong,
 } from '../time';
 import type { Category, OccurEvent } from '../types';
 import { clipToElapsed, previousRange, resolveRange, type ResolvedRange } from './resolve';
@@ -45,7 +49,6 @@ type Ctx = {
 };
 
 const fmt = (x: number) => (x >= 10 ? String(Math.round(x)) : String(Math.round(x * 10) / 10));
-const times = (n: number) => `${n} ${n === 1 ? 'time' : 'times'}`;
 
 function matchesFilter(e: OccurEvent, f?: QueryFilter): boolean {
   if (!f) return true;
@@ -63,27 +66,28 @@ function matchesFilter(e: OccurEvent, f?: QueryFilter): boolean {
 
 export function describeFilter(f?: QueryFilter): string {
   if (!f) return '';
+  const S = strings(queryStrings);
   const parts: string[] = [];
   if (f.weekdays?.length) {
     const w = [...f.weekdays].sort();
-    if (w.join() === '0,6') parts.push('on weekends');
-    else if (w.join() === '1,2,3,4,5') parts.push('on weekdays');
-    else parts.push('on ' + w.map((d) => WEEKDAYS_LONG[d] + 's').join(' and '));
+    if (w.join() === '0,6') parts.push(S.onWeekends);
+    else if (w.join() === '1,2,3,4,5') parts.push(S.onWeekdays);
+    else parts.push(S.onDays(w.map(weekdayLong)));
   }
   if (f.hourFrom !== undefined || f.hourTo !== undefined) {
     const a = f.hourFrom ?? 0;
     const b = f.hourTo ?? 24;
     const key = `${a}-${b}`;
     const named: Record<string, string> = {
-      '5-12': 'in the morning',
-      '12-17': 'in the afternoon',
-      '17-22': 'in the evening',
-      '22-5': 'at night',
+      '5-12': S.morning,
+      '12-17': S.afternoon,
+      '17-22': S.evening,
+      '22-5': S.night,
     };
     if (named[key]) parts.push(named[key]);
-    else if (b === 24) parts.push(`after ${formatHour(a)}`);
-    else if (a === 0) parts.push(`before ${formatHour(b)}`);
-    else parts.push(`between ${formatHour(a)} and ${formatHour(b)}`);
+    else if (b === 24) parts.push(S.after(formatHour(a)));
+    else if (a === 0) parts.push(S.before(formatHour(b)));
+    else parts.push(S.between(formatHour(a), formatHour(b)));
   }
   return parts.join(' ');
 }
@@ -105,7 +109,8 @@ function monthlyChart(events: OccurEvent[], r: ResolvedRange, now: Date, color?:
   for (const m of slice) {
     const next = new Date(m.getFullYear(), m.getMonth() + 1, 1);
     values.push(inRange(events, m, next).length);
-    labels.push(MONTHS_SHORT[m.getMonth()].slice(0, 1));
+    // Arabic month names share initials, so number the months instead
+    labels.push(getLang() === 'ar' ? String(m.getMonth() + 1) : MONTHS_SHORT[m.getMonth()].slice(0, 1));
   }
   return { kind: 'bars', values, labels, highlight: argmax(values), color };
 }
@@ -118,7 +123,7 @@ function dailyChart(events: OccurEvent[], r: ResolvedRange, now: Date, color?: s
   for (let i = 0; i < days; i++) {
     const d = addDays(r.from, i);
     values.push(map.get(dayKey(d)) ?? 0);
-    labels.push(days <= 7 ? WEEKDAYS_SHORT[d.getDay()].slice(0, 1) : i % 5 === 0 ? String(d.getDate()) : '');
+    labels.push(days <= 7 ? weekdayInitial(d.getDay()) : i % 5 === 0 ? String(d.getDate()) : '');
   }
   return { kind: 'bars', values, labels, highlight: argmax(values), color };
 }
@@ -131,7 +136,7 @@ function weekdayChart(events: OccurEvent[], color?: string): AnswerChart {
   return {
     kind: 'weekday',
     values,
-    labels: order.map((i) => WEEKDAYS_SHORT[i].slice(0, 1)),
+    labels: order.map(weekdayInitial),
     highlight: argmax(values),
     color,
   };
@@ -158,18 +163,21 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
   const catIds = new Set(cats.map((c) => c.id));
   const single = selected.length === 1 ? selected[0] : null;
   const color = single?.color;
+  const S = strings(queryStrings);
+  const times = S.times;
+  const cap = S.cap;
 
   const subject = single
     ? single.name
     : all
-      ? 'everything'
+      ? S.subjectAll
       : selected.length === 2
-        ? `${selected[0].name} and ${selected[1].name}`
-        : `${selected.length} categories`;
+        ? S.subjectTwo(selected[0].name, selected[1].name)
+        : S.subjectMany(selected.length);
   const subjectChip = single
     ? `${single.emoji} ${single.name}`
     : all
-      ? 'All categories'
+      ? S.allCategories
       : selected.map((c) => c.emoji).join(' ');
 
   const base = (partial: Omit<Answer, 'interpretation' | 'source' | 'spec'>, extraChips: string[] = []): Answer => ({
@@ -184,11 +192,9 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
     const names = ctx.categories.slice(0, 6).map((c) => `${c.emoji} ${c.name}`);
     return {
       headline: '—',
-      caption: 'no matching category',
-      sentence: `You don't count “${spec.unmatched}” yet.${
-        names.length ? ` You're tracking ${names.join(', ')}.` : ''
-      } Add it as a bubble and I'll start keeping track.`,
-      interpretation: [`“${spec.unmatched}”`],
+      caption: S.noMatchCaption,
+      sentence: S.noMatch(spec.unmatched, names),
+      interpretation: [S.quoted(spec.unmatched)],
       source,
       spec,
     };
@@ -205,9 +211,8 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
   if (!ctx.categories.length) {
     return base({
       headline: '0',
-      caption: 'nothing yet',
-      sentence:
-        'You are not counting anything yet. Add a bubble on the home screen and ask me again once you have a few taps.',
+      caption: S.nothingYetCaption,
+      sentence: S.notCounting,
     });
   }
 
@@ -215,8 +220,8 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
     base(
       {
         headline: '0',
-        caption: 'times',
-        sentence: r.allTime ? `Nothing logged for ${what}${ft} yet.` : `Nothing logged for ${what} ${r.label}${ft}.`,
+        caption: S.timesCaption(0),
+        sentence: S.nothing(what, r.label, ft, !!r.allTime),
       },
       chips,
     );
@@ -228,19 +233,17 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
       let sentence: string;
       let chart: AnswerChart | undefined;
       if (single) {
-        sentence = `You logged ${single.name} ${times(n)} ${r.label}${ft}.`;
-        if (n > 0 && days > 1) sentence += ` That's about ${fmt(n / days)} a day.`;
+        sentence = S.loggedTimes(single.name, n, r.label, ft);
+        if (n > 0 && days > 1) sentence += S.aboutPerDay(fmt(n / days));
         if (days > 1) chart = days <= 31 ? dailyChart(inR, r, now, color) : monthlyChart(inR, r, now, color);
       } else {
         const counts = cats
           .map((c) => ({ c, n: inR.filter((e) => e.categoryId === c.id).length }))
           .filter((x) => x.n > 0)
           .sort((a, b) => b.n - a.n);
-        sentence = all
-          ? `${n} ${n === 1 ? 'moment' : 'moments'} ${r.label}${ft}${counts.length ? ` across ${counts.length} ${counts.length === 1 ? 'category' : 'categories'}` : ''}.`
-          : `You logged ${subject} ${times(n)} ${r.label}${ft}.`;
+        sentence = all ? S.moments(n, r.label, ft, counts.length) : S.loggedTimes(subject, n, r.label, ft);
         if (counts.length) {
-          sentence += ` Most of it was ${counts[0].c.name} (${counts[0].n}).`;
+          sentence += S.mostOf(counts[0].c.name, counts[0].n);
           chart = {
             kind: 'bars',
             values: counts.slice(0, 7).map((x) => x.n),
@@ -249,7 +252,7 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
           };
         }
       }
-      return base({ headline: String(n), caption: n === 1 ? 'time' : 'times', sentence, chart }, [...chips, 'Count']);
+      return base({ headline: String(n), caption: S.timesCaption(n), sentence, chart }, [...chips, S.countChip]);
     }
 
     case 'peak': {
@@ -262,11 +265,11 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
           return base(
             {
               headline: formatHour(i),
-              caption: `${h[i]} of ${n} times`,
-              sentence: `${cap(subject)} peaks between ${formatHour(i)} and ${formatHour(i + 1)} — ${h[i]} of ${n} ${r.label}${ft}.`,
+              caption: S.kOfN(h[i], n),
+              sentence: S.peakHour(cap(subject), formatHour(i), formatHour(i + 1), h[i], n, r.label, ft),
               chart: hourChart(inR, color),
             },
-            [...chips, 'By hour'],
+            [...chips, S.byHour],
           );
         }
         case 'weekday': {
@@ -274,12 +277,12 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
           const i = argmax(h);
           return base(
             {
-              headline: `${WEEKDAYS_LONG[i]}s`,
-              caption: `${h[i]} of ${n} times`,
-              sentence: `${WEEKDAYS_LONG[i]}s are the busiest day for ${subject} — ${h[i]} of ${n} ${r.label}${ft}.`,
+              headline: S.weekdayPlural(weekdayLong(i)),
+              caption: S.kOfN(h[i], n),
+              sentence: S.peakWeekday(weekdayLong(i), subject, h[i], n, r.label, ft),
               chart: weekdayChart(inR, color),
             },
-            [...chips, 'By weekday'],
+            [...chips, S.byWeekday],
           );
         }
         case 'week': {
@@ -292,11 +295,11 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
           const d = parseDayKey(k)!;
           return base(
             {
-              headline: `Week of ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`,
+              headline: S.weekOf(d.getDate(), monthShort(d.getMonth())),
               caption: times(c),
-              sentence: `Your busiest week for ${subject} started ${formatDate(d, now)}, with ${times(c)}.`,
+              sentence: S.peakWeek(subject, formatDate(d, now), c),
             },
-            [...chips, 'By week'],
+            [...chips, S.byWeek],
           );
         }
         case 'month': {
@@ -310,12 +313,12 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
           const [y, mo] = k.split('-').map(Number);
           return base(
             {
-              headline: `${MONTHS_LONG[mo]}${y === now.getFullYear() ? '' : ` ${y}`}`,
+              headline: `${monthLong(mo)}${y === now.getFullYear() ? '' : ` ${y}`}`,
               caption: times(c),
-              sentence: `${MONTHS_LONG[mo]} ${y} was the biggest month for ${subject}, with ${times(c)}.`,
+              sentence: S.peakMonth(monthLong(mo), y, subject, c),
               chart: monthlyChart(inR, r, now, color),
             },
-            [...chips, 'By month'],
+            [...chips, S.byMonth],
           );
         }
         case 'day':
@@ -328,10 +331,16 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
               {
                 headline: formatDate(d, now),
                 caption: times(c),
-                sentence: `Your busiest day for ${subject} was ${formatDayLabel(d, now).toLowerCase() === 'today' ? 'today' : formatDate(d, now)}, with ${times(c)}${ft}.`,
+                sentence: S.peakDay(
+                  subject,
+                  calendarDaysBetween(d, now) === 0 ? 'today' : null,
+                  formatDate(d, now),
+                  c,
+                  ft,
+                ),
                 chart: dailyChart(inR, r, now, color),
               },
-              [...chips, 'By day'],
+              [...chips, S.byDay],
             );
           }
           // no grouping asked: give the full picture — usual hour, busiest weekday, heaviest day
@@ -341,13 +350,11 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
           return base(
             {
               headline: `~${formatHour(hour)}`,
-              caption: 'usual time',
-              sentence:
-                `${cap(subject)} usually happens around ${formatHour(hour)}, and ${WEEKDAYS_LONG[wi]}s are the busiest day of the week (${wd[wi]} of ${n}). ` +
-                `Heaviest single day: ${formatDate(d, now)} with ${times(c)}.`,
+              caption: S.usualCaption,
+              sentence: S.usual(cap(subject), formatHour(hour), weekdayLong(wi), wd[wi], n, formatDate(d, now), c),
               chart: hourChart(inR, color),
             },
-            [...chips, 'Peak'],
+            [...chips, S.peakChip],
           );
         }
       }
@@ -359,20 +366,30 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
       const e = spec.intent === 'last' ? inR[inR.length - 1] : inR[0];
       const d = new Date(ts(e));
       const cat = byId.get(e.categoryId);
-      const what = single ? single.name : `${cat?.emoji ?? ''} ${cat?.name ?? 'entry'}`.trim();
+      const what = single ? single.name : `${cat?.emoji ?? ''} ${cat?.name ?? S.entry}`.trim();
       const day = formatDayLabel(d, now);
-      const where = e.place ? ` near ${e.place}` : '';
+      const where = e.place ? S.near(e.place) : '';
+      const ago = calendarDaysBetween(d, now);
+      const recentDay = ago === 0 || ago === 1 ? day : null;
       const sentence =
         spec.intent === 'last'
-          ? `${all ? `Your most recent entry was ${what}. It` : `Your most recent ${what} entry`} was ${day === 'Today' || day === 'Yesterday' ? day.toLowerCase() : `on ${formatDate(d, now)}`} at ${formatTime(d)}${where} — ${formatDuration(now.getTime() - d.getTime())} ago.`
-          : `${all ? `Your first entry was ${what}. It` : `Your first ${what} entry`} was on ${formatDate(d, now)} at ${formatTime(d)}${where}. ${times(inR.length)} since.`;
+          ? S.last(
+              all,
+              what,
+              recentDay,
+              formatDate(d, now),
+              formatTime(d),
+              where,
+              formatDuration(now.getTime() - d.getTime()),
+            )
+          : S.first(all, what, formatDate(d, now), formatTime(d), where, inR.length);
       return base(
         {
           headline: spec.intent === 'last' ? formatRelative(d, now) : formatDate(d, now),
           caption: `${formatDate(d, now)} · ${formatTime(d)}`,
           sentence,
         },
-        [...chips, spec.intent === 'last' ? 'Most recent' : 'First'],
+        [...chips, spec.intent === 'last' ? S.mostRecentChip : S.firstChip],
       );
     }
 
@@ -384,11 +401,11 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
       return base(
         {
           headline: fmt(value),
-          caption: `per ${per}`,
-          sentence: `On average ${subject === 'everything' ? 'you logged' : `you logged ${subject}`} ${fmt(value)} times a ${per} ${r.label}${ft} — ${inR.length} over ${days} ${days === 1 ? 'day' : 'days'}.`,
+          caption: S.perCaption(per),
+          sentence: S.average(all, subject, fmt(value), per, r.label, ft, inR.length, days),
           chart: days > 1 && days <= 31 ? dailyChart(inR, r, now, color) : undefined,
         },
-        [...chips, `Per ${per}`],
+        [...chips, S.perChip(per)],
       );
     }
 
@@ -398,24 +415,21 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
       // mid-period: compare like with like (Monday 9am vs last Monday 9am, not a whole week)
       if (now >= r.from && now < r.to && prev.to <= r.from) {
         prev = clipToElapsed(prev, r, now);
-        prevLabel = `${prev.label} by this point`;
+        prevLabel = S.byThisPoint(prev.label);
       }
       const a = inR.length;
       const b = inRange(scoped, prev.from, prev.to).length;
       const pct = pctChange(a, b);
       const diff = a - b;
-      const trend =
-        diff === 0
-          ? 'Exactly the same.'
-          : `That's ${Math.abs(diff)} ${diff > 0 ? 'more' : 'fewer'}${pct !== null ? ` (${diff > 0 ? '+' : ''}${pct}%)` : ''}.`;
+      const trend = diff === 0 ? S.same : S.trend(diff, pct);
       return base(
         {
-          headline: `${a} vs ${b}`,
-          caption: pct === null ? 'new' : `${pct > 0 ? '+' : ''}${pct}%`,
-          sentence: `${cap(subject)}: ${a} ${r.label} vs ${b} ${prevLabel}${ft}. ${trend}`,
+          headline: S.vs(a, b),
+          caption: pct === null ? S.newCaption : `${pct > 0 ? '+' : ''}${pct}%`,
+          sentence: S.compare(cap(subject), a, r.label, b, prevLabel, ft, trend),
           chart: { kind: 'bars', values: [b, a], labels: [prev.chip, r.chip], highlight: 1, color },
         },
-        [r.chip, `vs ${prev.chip}`, 'Compare'],
+        [r.chip, S.vsChip(prev.chip), S.compareChip],
       );
     }
 
@@ -424,11 +438,11 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
       const s = streaks(inR, now);
       return base(
         {
-          headline: `${s.longest} ${s.longest === 1 ? 'day' : 'days'}`,
-          caption: 'longest streak',
-          sentence: `Your longest run of ${subject} was ${s.longest} ${s.longest === 1 ? 'day' : 'days'} in a row${s.longestEnd ? `, ending ${formatDate(s.longestEnd, now)}` : ''}. Current streak: ${s.current} ${s.current === 1 ? 'day' : 'days'}.`,
+          headline: S.daysHeadline(s.longest),
+          caption: S.streakCaption,
+          sentence: S.streak(subject, s.longest, s.longestEnd ? formatDate(s.longestEnd, now) : null, s.current),
         },
-        [...chips, 'Streak'],
+        [...chips, S.streakChip],
       );
     }
 
@@ -437,11 +451,17 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
       const g = gaps(inR, now);
       const ongoing = g.longestTo === null;
       const sentence = ongoing
-        ? `You're in your longest break from ${subject} right now — ${formatDuration(g.longestMs)} since ${formatDate(g.longestFrom!, now)} at ${formatTime(g.longestFrom!)}.`
-        : `Your longest break from ${subject} was ${formatDuration(g.longestMs)}, from ${formatDate(g.longestFrom!, now)} to ${formatDate(g.longestTo!, now)}. It's been ${formatDuration(g.currentMs)} since the last one.`;
+        ? S.gapNow(subject, formatDuration(g.longestMs), formatDate(g.longestFrom!, now), formatTime(g.longestFrom!))
+        : S.gapPast(
+            subject,
+            formatDuration(g.longestMs),
+            formatDate(g.longestFrom!, now),
+            formatDate(g.longestTo!, now),
+            formatDuration(g.currentMs),
+          );
       return base(
-        { headline: formatDuration(g.longestMs), caption: ongoing ? 'and counting' : 'longest break', sentence },
-        [...chips, 'Longest gap'],
+        { headline: formatDuration(g.longestMs), caption: ongoing ? S.andCounting : S.longestBreak, sentence },
+        [...chips, S.gapChip],
       );
     }
 
@@ -457,17 +477,17 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
       }
       const shown = [...groups.entries()].slice(0, 5);
       const body = shown
-        .map(([k, ds]) => `${k}: ${ds.slice(0, 8).map(formatTime).join(', ')}${ds.length > 8 ? '…' : ''}`)
+        .map(([k, ds]) => `${k}: ${ds.slice(0, 8).map(formatTime).join(S.listSep)}${ds.length > 8 ? '…' : ''}`)
         .join(' · ');
-      const more = groups.size > shown.length ? ` (+${groups.size - shown.length} more days)` : '';
+      const more = groups.size > shown.length ? S.moreDays(groups.size - shown.length) : '';
       return base(
         {
           headline: String(n),
-          caption: n === 1 ? 'time' : 'times',
+          caption: S.timesCaption(n),
           sentence: `${body}${more}`,
           chart: hourChart(inR, color),
         },
-        [...chips, 'List'],
+        [...chips, S.listChip],
       );
     }
 
@@ -476,11 +496,11 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
         .map((c) => ({ c, n: inR.filter((e) => e.categoryId === c.id).length }))
         .filter((x) => x.n > 0)
         .sort((a, b) => b.n - a.n);
-      if (!counts.length) return nothing('anything');
+      if (!counts.length) return nothing(S.anything);
       const [top, second, third] = counts;
-      let sentence = `${top.c.name} leads ${r.label}${ft} with ${times(top.n)}`;
-      if (second) sentence += `, followed by ${second.c.name} (${second.n})`;
-      if (third) sentence += ` and ${third.c.name} (${third.n})`;
+      let sentence = S.leads(top.c.name, r.label, ft, top.n);
+      if (second) sentence += S.followedBy(second.c.name, second.n);
+      if (third) sentence += S.andThen(third.c.name, third.n);
       sentence += '.';
       return base(
         {
@@ -494,12 +514,8 @@ export function executeQuery(spec: QuerySpec, ctx: Ctx): Answer {
             highlight: 0,
           },
         },
-        [r.chip, 'Ranking'],
+        [r.chip, S.rankingChip],
       );
     }
   }
-}
-
-function cap(s: string): string {
-  return s ? s[0].toUpperCase() + s.slice(1) : s;
 }

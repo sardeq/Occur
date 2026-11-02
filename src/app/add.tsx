@@ -7,7 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavButton, PillButton } from '@/components/buttons';
 import { IdeasGrid } from '@/components/ideas-grid';
 import { Text } from '@/components/text';
+import { editingStrings } from '@/i18n/editing';
 import { showDialog } from '@/lib/dialog';
+import { useStrings } from '@/lib/i18n';
 import { addCategory, deleteCategory, useData, type CategoryInput } from '@/lib/store';
 import { SUGGESTIONS } from '@/lib/suggestions';
 import { useTheme } from '@/theme';
@@ -20,6 +22,7 @@ import { useTheme } from '@/theme';
 export default function AddScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const S = useStrings(editingStrings);
   const categories = useData((s) => s.categories);
   const events = useData((s) => s.events);
   // bubbles added from this screen, so a second tap can take them back off
@@ -49,9 +52,9 @@ export default function AddScreen() {
     };
     // something just added by mistake comes straight off; anything with history asks first
     if (addedHere[key] && !used) return remove();
-    showDialog(`Remove ${s.name}?`, used ? 'This also deletes everything you counted for it.' : undefined, [
-      { label: 'Keep it', style: 'cancel' },
-      { label: 'Remove', style: 'destructive', onPress: remove },
+    showDialog(S.removeTitle(s.name), used ? S.removeBody : undefined, [
+      { label: S.keepIt, style: 'cancel' },
+      { label: S.remove, style: 'destructive', onPress: remove },
     ]);
   };
 
@@ -60,27 +63,27 @@ export default function AddScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={[styles.topbar, { paddingTop: insets.top + 8 }]}>
-        <NavButton icon="back" label="Back" accessibilityLabel="Back to home" onPress={() => router.back()} />
+        <NavButton icon="back" label={S.back} accessibilityLabel={S.backA11y} onPress={() => router.back()} />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 120 }}>
         <Text variant="title" style={{ marginTop: 8 }}>
-          What would you like to count?
+          {S.whatToCount}
         </Text>
         <Text variant="body" tone="soft" style={{ marginTop: 6 }}>
-          Tap an idea to add it — you can pick more than one. Tap it again to take it off.
+          {S.addHint}
         </Text>
 
         <PillButton
           icon="pencil"
           variant="ghost"
-          label="Make my own"
+          label={S.makeOwn}
           onPress={() => router.push('/edit-category')}
           style={{ marginTop: 18 }}
         />
 
-        <Text variant="eyebrow" tone="soft" style={{ marginTop: 26, marginBottom: 10, marginLeft: 4 }}>
-          Ideas
+        <Text variant="eyebrow" tone="soft" style={{ marginTop: 26, marginBottom: 10, marginStart: 4 }}>
+          {S.ideas}
         </Text>
         <IdeasGrid ideas={SUGGESTIONS} added={added} onPress={onIdea} />
       </ScrollView>
@@ -88,9 +91,9 @@ export default function AddScreen() {
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16), backgroundColor: t.bg }]}>
         <PillButton
           icon="check"
-          label={count ? `Done · ${count} added` : 'Done'}
+          label={count ? S.doneAdded(count) : S.done}
           onPress={() => router.back()}
-          accessibilityLabel="Done, back to home"
+          accessibilityLabel={S.doneA11y}
         />
       </View>
     </View>

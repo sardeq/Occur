@@ -8,6 +8,8 @@ import { Bars, DayStrip } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
+import { insightsStrings } from '@/i18n/insights';
+import { useLang, useStrings } from '@/lib/i18n';
 import { argmax, hourHistogram, inRange, pctChange } from '@/lib/stats';
 import { useData } from '@/lib/store';
 import {
@@ -19,6 +21,7 @@ import {
   numberWord,
   startOfDay,
   startOfWeek,
+  weekdayInitial,
 } from '@/lib/time';
 import type { Goal } from '@/lib/types';
 import { font, radius, useTheme, type Theme } from '@/theme';
@@ -32,6 +35,8 @@ function tone(goal: Goal, diff: number, t: Theme) {
 export default function Insights() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const S = useStrings(insightsStrings);
+  const lang = useLang();
   const now = useNow(60_000);
   const categories = useData((s) => s.categories);
   const events = useData((s) => s.events);
@@ -80,21 +85,18 @@ export default function Insights() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={[styles.topbar, { paddingTop: insets.top + 6 }]}>
-        <NavButton icon="back" label="Back" accessibilityLabel="Back to home" onPress={() => router.back()} />
+        <NavButton icon="back" label={S.back} accessibilityLabel={S.backA11y} onPress={() => router.back()} />
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
         <View style={{ paddingHorizontal: 20 }}>
           <Text variant="eyebrow" tone="soft">
-            This week
+            {S.thisWeek}
           </Text>
           <Text style={{ fontFamily: font.display, fontSize: 60, lineHeight: 70, color: t.ink, marginTop: 4 }}>
             {data.total}
           </Text>
           <Text variant="heading" tone="soft">
-            {data.total === 1 ? 'moment' : 'moments'} so far
-            {pct !== null && data.prevTotal > 0
-              ? ` — ${pct === 0 ? 'same as' : `${Math.abs(pct)}% ${pct > 0 ? 'more than' : 'fewer than'}`} this point last week`
-              : ''}
+            {S.soFar(data.total, data.prevTotal > 0 ? pct : null)}
           </Text>
         </View>
 
@@ -102,7 +104,7 @@ export default function Insights() {
         <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line }]}>
           <View style={[styles.row, { justifyContent: 'space-between' }]}>
             <Text variant="label" tone="soft">
-              Today, hour by hour
+              {S.todayByHour}
             </Text>
             <Text variant="label" tone="faint">
               {numberWord(data.today.length)}
@@ -121,7 +123,7 @@ export default function Insights() {
           />
           {data.today.length === 0 && (
             <Text variant="caption" tone="faint">
-              Nothing logged yet today.
+              {S.nothingToday}
             </Text>
           )}
         </View>
@@ -136,7 +138,7 @@ export default function Insights() {
                 variant="caption"
                 tone={i === data.todayIndex ? 'ink' : 'faint'}
                 style={[styles.cellHead, i === data.todayIndex && { fontFamily: font.extrabold }]}>
-                {WEEKDAYS_SHORT[d].slice(0, 2)}
+                {lang === 'ar' ? weekdayInitial(d) : WEEKDAYS_SHORT[d].slice(0, 2)}
               </Text>
             ))}
           </View>
@@ -146,10 +148,10 @@ export default function Insights() {
               <Pressable
                 key={c.id}
                 accessibilityRole="button"
-                accessibilityLabel={`${c.name} this week`}
+                accessibilityLabel={S.rowA11y(c.name)}
                 onPress={() => router.push({ pathname: '/category/[id]', params: { id: c.id } })}
                 style={[styles.row, { marginTop: 8 }]}>
-                <View style={[styles.row, { flex: 1, gap: 6, paddingRight: 6 }]}>
+                <View style={[styles.row, { flex: 1, gap: 6, paddingEnd: 6 }]}>
                   <Text style={{ fontSize: 16 }}>{c.emoji}</Text>
                   <Text variant="label" numberOfLines={1} style={{ flex: 1 }}>
                     {c.name}
@@ -178,7 +180,7 @@ export default function Insights() {
           })}
           {data.rows.length === 0 && (
             <Text variant="caption" tone="faint" style={{ marginTop: 8 }}>
-              Your bubbles will show up here.
+              {S.bubblesShowHere}
             </Text>
           )}
         </View>
@@ -186,9 +188,9 @@ export default function Insights() {
         {/* trends */}
         {data.rows.length > 0 && (
           <View style={{ paddingHorizontal: 16, marginTop: 26 }}>
-            <Text variant="heading">Compared with last week</Text>
+            <Text variant="heading">{S.comparedLastWeek}</Text>
             <Text variant="caption" tone="faint" style={{ marginTop: 2 }}>
-              Same point in the week, so Monday isn’t compared with a whole week. Green follows each bubble’s goal.
+              {S.comparedHint}
             </Text>
             {data.rows.map(({ c, cur, prev, diff }) => (
               <View key={c.id} style={[styles.trend, { borderBottomColor: t.line }]}>
@@ -197,7 +199,7 @@ export default function Insights() {
                   {c.name}
                 </Text>
                 <Text variant="label" tone="faint">
-                  {prev} → {cur}
+                  {S.fromTo(prev, cur)}
                 </Text>
                 <View style={[styles.badge, { backgroundColor: alpha(tone(c.goal, diff, t), 0.12) }]}>
                   <Text variant="label" color={tone(c.goal, diff, t)}>
@@ -212,10 +214,10 @@ export default function Insights() {
         {/* rhythm */}
         <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line, marginTop: 26 }]}>
           <Text variant="label" tone="soft">
-            Your daily rhythm · last 30 days
+            {S.rhythm}
           </Text>
           <Text variant="heading" style={{ marginTop: 6 }}>
-            {data.last30Count ? `Busiest around ${formatHour(busiest)}` : 'Not enough data yet'}
+            {data.last30Count ? S.busiestAround(formatHour(busiest)) : S.notEnough}
           </Text>
           <View style={{ marginTop: 12 }}>
             <Bars
@@ -233,9 +235,7 @@ export default function Insights() {
           onPress={() => router.push('/ask')}
           style={[styles.card, styles.row, { backgroundColor: t.pill, borderColor: t.pill, gap: 10 }]}>
           <Icon name="sparkle" size={18} color={t.pillInk} />
-          <Text style={{ fontFamily: font.displaySoft, fontSize: 18, color: t.pillInk, flex: 1 }}>
-            Ask something specific…
-          </Text>
+          <Text style={{ fontFamily: font.displaySoft, fontSize: 18, color: t.pillInk, flex: 1 }}>{S.askSpecific}</Text>
           <Icon name="chevron" size={18} color={t.pillInk} />
         </Pressable>
       </ScrollView>
@@ -253,11 +253,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
-  cellHead: { width: 28, marginLeft: 4, textAlign: 'center' },
+  cellHead: { width: 28, marginStart: 4, textAlign: 'center' },
   cell: {
     width: 28,
     height: 28,
-    marginLeft: 4,
+    marginStart: 4,
     borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',

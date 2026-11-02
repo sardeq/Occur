@@ -51,7 +51,13 @@
           "locationWhenInUsePermission": "Occur saves an approximate place with entries for the bubbles where you turn on “Remember where”."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-localization",
+        {
+          "supportsRTL": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

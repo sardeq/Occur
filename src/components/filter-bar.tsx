@@ -10,7 +10,9 @@ import Animated, {
 
 import { tapHaptic } from '@/components/buttons';
 import { Text } from '@/components/text';
-import { RANGES, TOP_N, type HomeRange, type Lens } from '@/lib/home-filter';
+import { componentStrings } from '@/i18n/home';
+import { ranges, TOP_N, type HomeRange, type Lens } from '@/lib/home-filter';
+import { isRTL, useLang, useStrings } from '@/lib/i18n';
 import type { Category } from '@/lib/types';
 import { font, radius, useTheme } from '@/theme';
 import { swatch } from '@/theme/palette';
@@ -18,11 +20,12 @@ import { swatch } from '@/theme/palette';
 const SEG_H = 34;
 const CHIP_H = 34;
 
-const LENSES: { key: Lens; emoji: string; label: string; a11y: string }[] = [
-  { key: 'top', emoji: '🔥', label: `Top ${TOP_N}`, a11y: `Only the ${TOP_N} most active` },
-  { key: 'quiet', emoji: '💤', label: 'Quiet', a11y: 'Only things with nothing logged in this period' },
-  { key: 'more', emoji: '🌱', label: 'Doing more', a11y: 'Only things you want to do more' },
-  { key: 'less', emoji: '🪶', label: 'Cutting back', a11y: 'Only things you want to do less' },
+type Strs = (typeof componentStrings)['en'];
+const lensList = (s: Strs): { key: Lens; emoji: string; label: string; a11y: string }[] => [
+  { key: 'top', emoji: '🔥', label: s.top(TOP_N), a11y: s.topA11y(TOP_N) },
+  { key: 'quiet', emoji: '💤', label: s.quiet, a11y: s.quietA11y },
+  { key: 'more', emoji: '🌱', label: s.doingMore, a11y: s.doingMoreA11y },
+  { key: 'less', emoji: '🪶', label: s.cuttingBack, a11y: s.cuttingBackA11y },
 ];
 
 /**
@@ -56,8 +59,9 @@ export function FilterBar({
   goals: { more: boolean; less: boolean };
 }) {
   const t = useTheme();
+  const s = useStrings(componentStrings);
   const all = !lens && picked.length === 0;
-  const lenses = LENSES.filter((l) => (l.key === 'more' ? goals.more : l.key === 'less' ? goals.less : true));
+  const lenses = lensList(s).filter((l) => (l.key === 'more' ? goals.more : l.key === 'less' ? goals.less : true));
 
   return (
     <View style={styles.wrap}>
@@ -67,7 +71,7 @@ export function FilterBar({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.chips}
         style={{ marginHorizontal: -16 }}>
-        <Chip label="All" selected={all} onPress={onClear} a11y="Show everything" />
+        <Chip label={s.all} selected={all} onPress={onClear} a11y={s.showEverything} />
         {categories.length > 1 &&
           lenses.map((l) => (
             <Chip
@@ -93,7 +97,7 @@ export function FilterBar({
                 badge={n}
                 selected={on}
                 tint={on ? { bg: sw.base, border: sw.deep, ink: sw.ink } : undefined}
-                a11y={`${on ? 'Hide' : 'Show'} ${c.name}, ${n}`}
+                a11y={s.chipA11y(on, c.name, n)}
                 onPress={() => onPick(c.id)}
               />
             );
@@ -107,6 +111,9 @@ export function FilterBar({
 function RangeSwitch({ value, onChange }: { value: HomeRange; onChange: (r: HomeRange) => void }) {
   const t = useTheme();
   const reduce = useReducedMotion();
+  const lang = useLang();
+  const rtl = isRTL(lang);
+  const RANGES = ranges();
   const [w, setW] = useState(0);
   const idx = Math.max(
     0,
@@ -116,9 +123,10 @@ function RangeSwitch({ value, onChange }: { value: HomeRange; onChange: (r: Home
   const x = useSharedValue(0);
 
   useEffect(() => {
-    const to = idx * seg;
+    // the pill is pinned to the physical left (same on every platform); in Arabic the first option is on the right
+    const to = (rtl ? RANGES.length - 1 - idx : idx) * seg;
     x.set(reduce || !seg ? withTiming(to, { duration: 0 }) : withSpring(to, { damping: 20, stiffness: 260 }));
-  }, [idx, seg, reduce, x]);
+  }, [idx, seg, reduce, x, rtl, RANGES.length]);
 
   const pill = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
 

@@ -16,7 +16,9 @@ import { Icon, type IconName } from '@/components/icon';
 import { TapBubble } from '@/components/tap-bubble';
 import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
+import { homeStrings } from '@/i18n/home';
 import { useAuth } from '@/lib/auth';
+import { useLang, useStrings } from '@/lib/i18n';
 import {
   applyFilter,
   focusTiles,
@@ -42,8 +44,8 @@ import {
   useData,
   type CategoryInput,
 } from '@/lib/store';
-import { SUGGESTIONS } from '@/lib/suggestions';
-import { DAY, MONTHS_LONG, WEEKDAYS_LONG, formatTime, numberWord, startOfDay } from '@/lib/time';
+import { isSuggestionUsed, localSuggestions } from '@/lib/suggestions';
+import { DAY, formatTime, startOfDay } from '@/lib/time';
 import type { Category, OccurEvent } from '@/lib/types';
 import { font, radius, useTheme } from '@/theme';
 import { swatch } from '@/theme/palette';
@@ -76,7 +78,9 @@ export default function Home() {
   const syncError = useData((s) => s.syncError);
   const user = useAuth((s) => s.user);
   const homeStyle = usePrefs((s) => s.homeStyle);
-  const tipsOpen = usePrefs((s) => s.tipsOpen);
+  const tipsOn = usePrefs((s) => s.tips);
+  const lang = useLang();
+  const str = useStrings(homeStrings);
 
   const [field, setField] = useState({ w: 0, h: 0 });
   const [pulses, setPulses] = useState<Record<string, number>>({});
@@ -91,11 +95,10 @@ export default function Home() {
   const bottomBarH = ASK_H + insets.bottom + 18;
 
   // One pass over the log: today's times per category + 14-day usage weights.
-  const { todayHours, todayCounts, lastToday, weights, total } = useMemo(() => {
+  const { todayHours, todayCounts, lastToday, weights } = useMemo(() => {
     const todayHours: Record<string, number[]> = {};
     const lastToday: Record<string, Date> = {};
     const weights: Record<string, number> = {};
-    let total = 0;
     const from = d0 - 14 * DAY;
     for (const e of events) {
       const ts = Date.parse(e.occurredAt);
@@ -103,13 +106,12 @@ export default function Home() {
         const d = new Date(ts);
         (todayHours[e.categoryId] ??= []).push(d.getHours() + d.getMinutes() / 60);
         lastToday[e.categoryId] = d;
-        total++;
       } else if (ts >= from) {
         weights[e.categoryId] = (weights[e.categoryId] ?? 0) + 1;
       }
     }
     const todayCounts = Object.fromEntries(Object.entries(todayHours).map(([k, v]) => [k, v.length]));
-    return { todayHours, todayCounts, lastToday, weights, total };
+    return { todayHours, todayCounts, lastToday, weights };
   }, [events, d0]);
 
   const byId = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
@@ -118,7 +120,8 @@ export default function Home() {
   const byCat = useMemo(() => summarize(events, range, now), [events, range, now]);
   const pickedIds = useMemo(() => picked.filter((id) => byId.has(id)), [picked, byId]);
   const filtering = lens !== null || pickedIds.length > 0;
-  const word = rangeWord(range);
+  // text helpers take `lang` so memos refresh when the language changes
+  const word = useMemo(() => rangeWord(range, lang), [range, lang]);
   // Bubble size: 14-day habit for "Today", otherwise the period so far minus
   // today — either way it doesn't change while you're tapping.
   const sizeWeights = useMemo(
@@ -144,23 +147,24 @@ export default function Home() {
     if (!focus) return null;
     const evs = events.filter((e) => e.categoryId === focus.id);
     return {
-      tiles: focusTiles(evs, focus, statFor(byCat, focus.id), range, now),
+      tiles: focusTiles(evs, focus, statFor(byCat, focus.id), range, now, lang),
       series: rangeSeries(evs, range, now),
     };
-  }, [focus, events, byCat, range, now]);
+  }, [focus, events, byCat, range, now, lang]);
   const mix = useMemo(() => {
     if (focus || !categories.length) return null;
     if (lens === 'quiet') {
       const line = quietLine(
         visible.map((c) => ({ category: c, last: statFor(byCat, c.id).last })),
         now,
+        lang,
       );
       return { items: [], line };
     }
     if (pickedIds.length < 2 && !lens && range === 'today') return null;
     const items = visible.map((c) => ({ category: c, count: statFor(byCat, c.id).count }));
-    return { items, line: mixLine(items, events, range, now) };
-  }, [focus, categories.length, lens, pickedIds.length, range, visible, byCat, events, now]);
+    return { items, line: mixLine(items, events, range, now, lang) };
+  }, [focus, categories.length, lens, pickedIds.length, range, visible, byCat, events, now, lang]);
 
   const pick = (id: string) => {
     setLens(null);
@@ -179,9 +183,11 @@ export default function Home() {
   const moreIdeas = useMemo(
     () =>
       !filtering && categories.length > 0 && categories.length < IDEAS_UNTIL
-        ? SUGGESTIONS.filter((s) => !usedNames.has(s.name.toLowerCase())).slice(0, 8)
+        ? localSuggestions(lang)
+            .filter((s) => !isSuggestionUsed(s, usedNames))
+            .slice(0, 8)
         : [],
-    [filtering, categories.length, usedNames],
+    [filtering, categories.length, usedNames, lang],
   );
   const ideasH = moreIdeas.length ? 72 : 0;
 
@@ -257,49 +263,29 @@ export default function Home() {
       setField({ w: Math.round(width), h: Math.round(height) });
   };
 
-  const dateLine = `${WEEKDAYS_LONG[now.getDay()]}, ${now.getDate()} ${MONTHS_LONG[now.getMonth()]}`;
-  const shown = filtering
-    ? visible.reduce((n, c) => n + statFor(byCat, c.id).count, 0)
-    : range === 'today'
-      ? total
-      : Object.values(counts).reduce((a, b) => a + b, 0);
-  const headline = focus
-    ? `${focus.name}, ${numberWord(shown).toLowerCase()} ${word}.`
-    : lens === 'quiet'
-      ? visible.length
-        ? `${numberWord(visible.length)} quiet ${visible.length === 1 ? 'one' : 'ones'} ${word}.`
-        : `Nothing quiet ${word}.`
-      : shown === 0
-        ? `Nothing yet ${word}.`
-        : `${numberWord(shown)} ${shown === 1 ? 'moment' : 'moments'} ${word}.`;
-  const emptyFilterMsg = lens === 'quiet' ? `Everything's had a turn ${word}.` : `Nothing logged ${word} yet.`;
+  const emptyFilterMsg = lens === 'quiet' ? str.emptyQuiet(word) : str.emptyNothing(word);
   const offline = !!syncError && pending > 0;
-  const showTips = categories.length > 0 && events.length < 40;
+  const showTips = tipsOn && categories.length > 0;
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
-      {/* header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      {/* header: just the buttons — the bubbles are the headline */}
+      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={{ flex: 1 }}>
-          <View style={styles.row}>
-            <Text variant="eyebrow" tone="soft">
-              {dateLine}
-            </Text>
-            {pending > 0 && (
-              <View
-                accessibilityLabel={offline ? 'Offline, changes saved on device' : 'Syncing'}
-                style={{ marginLeft: 8 }}>
-                <Icon name={offline ? 'cloudOff' : 'cloud'} size={14} color={t.inkFaint} />
-              </View>
-            )}
-          </View>
-          <Text variant="title" style={{ marginTop: 4 }}>
-            {categories.length ? headline : 'Hello.'}
-          </Text>
+          {pending > 0 && (
+            <Animated.View
+              entering={FadeIn.duration(200)}
+              exiting={FadeOut.duration(200)}
+              accessible
+              accessibilityLabel={offline ? str.syncOffline : str.syncing}
+              style={[styles.syncDot, { backgroundColor: t.surface, borderColor: t.line }]}>
+              <Icon name={offline ? 'cloudOff' : 'cloud'} size={15} color={t.inkFaint} />
+            </Animated.View>
+          )}
         </View>
         <View style={[styles.row, { gap: 6, alignItems: 'flex-start' }]}>
-          <HeaderButton icon="chart" label="Insights" onPress={() => router.push('/insights')} />
-          <HeaderButton label="Settings" a11y="Settings and account" onPress={() => router.push('/settings')}>
+          <HeaderButton icon="chart" label={str.insights} onPress={() => router.push('/insights')} />
+          <HeaderButton label={str.settings} a11y={str.settingsA11y} onPress={() => router.push('/settings')}>
             {user?.avatarUrl ? (
               <Image source={{ uri: user.avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
             ) : (
@@ -335,33 +321,32 @@ export default function Home() {
       {mix && <MixCard items={mix.items} line={mix.line} />}
 
       {showTips && !filtering && (
-        <View style={styles.tipsWrap}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={tipsOpen ? 'Hide tips' : 'Show tips'}
-            accessibilityState={{ expanded: tipsOpen }}
-            hitSlop={8}
-            onPress={() => {
-              tapHaptic();
-              setPref('tipsOpen', !tipsOpen);
-            }}
-            style={({ pressed }) => [styles.tipsToggle, { opacity: pressed ? 0.6 : 1 }]}>
-            <View style={{ transform: [{ rotate: tipsOpen ? '90deg' : '0deg' }] }}>
-              <Icon name="chevron" size={13} color={t.inkSoft} strokeWidth={2.8} />
-            </View>
-            <Text style={{ fontFamily: font.semibold, fontSize: 14, color: t.inkSoft }}>Tips</Text>
-          </Pressable>
-          {tipsOpen && (
-            <Animated.View
-              entering={FadeIn.duration(160)}
-              exiting={FadeOut.duration(120)}
-              style={[styles.tips, { backgroundColor: t.surface, borderColor: t.line }]}>
-              <Tip icon="plus" text={homeStyle === 'list' ? 'Tap + to add one' : 'Tap a bubble to add one'} />
-              <Tip icon="minus" text={homeStyle === 'list' ? 'Tap − to take one away' : 'Mistake? Tap − or swipe down'} />
-              <Tip icon="chevron" text={homeStyle === 'list' ? 'Tap a name for details' : 'Hold a bubble for details'} />
-            </Animated.View>
-          )}
-        </View>
+        <Animated.View
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(140)}
+          style={[styles.tips, { backgroundColor: t.surface, borderColor: t.line }]}>
+          <View style={[styles.row, { gap: 6 }]}>
+            <Icon name="sparkle" size={13} color={t.inkSoft} />
+            <Text style={{ flex: 1, fontFamily: font.bold, fontSize: 13, color: t.inkSoft }}>{str.tips}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={str.hideTipsA11y}
+              hitSlop={10}
+              onPress={() => {
+                tapHaptic();
+                setPref('tips', false);
+              }}
+              style={({ pressed }) => [
+                styles.tipsClose,
+                { backgroundColor: t.surfaceAlt, opacity: pressed ? 0.6 : 1 },
+              ]}>
+              <Icon name="close" size={11} color={t.inkSoft} strokeWidth={2.6} />
+            </Pressable>
+          </View>
+          <Tip icon="plus" text={homeStyle === 'list' ? str.tipAddList : str.tipAddBubbles} />
+          <Tip icon="minus" text={homeStyle === 'list' ? str.tipRemoveList : str.tipRemoveBubbles} />
+          <Tip icon="chevron" text={homeStyle === 'list' ? str.tipOpenList : str.tipOpenBubbles} />
+        </Animated.View>
       )}
 
       {/* content */}
@@ -388,8 +373,11 @@ export default function Home() {
                 clearFilter();
               }}
               hitSlop={8}
-              style={({ pressed }) => [styles.filterEmptyBtn, { borderColor: t.lineStrong, opacity: pressed ? 0.6 : 1 }]}>
-              <Text variant="label">Show everything</Text>
+              style={({ pressed }) => [
+                styles.filterEmptyBtn,
+                { borderColor: t.lineStrong, opacity: pressed ? 0.6 : 1 },
+              ]}>
+              <Text variant="label">{str.showEverything}</Text>
             </Pressable>
           </Animated.View>
         )}
@@ -414,11 +402,11 @@ export default function Home() {
             {!filtering && (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Add something to count"
+                accessibilityLabel={str.addSomething}
                 onPress={openAdd}
                 style={({ pressed }) => [styles.addRow, { borderColor: t.lineStrong, opacity: pressed ? 0.7 : 1 }]}>
                 <Icon name="plus" size={22} color={t.ink} strokeWidth={2.3} />
-                <Text variant="bodyStrong">Add something to count</Text>
+                <Text variant="bodyStrong">{str.addSomething}</Text>
               </Pressable>
             )}
           </ScrollView>
@@ -439,10 +427,10 @@ export default function Home() {
                     style={{ position: 'absolute', left: p.x - p.r, top: p.y - p.r }}>
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel="Add something to count"
+                      accessibilityLabel={str.addSomething}
                       onPress={openAdd}
                       style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.93 : 1 }] })}>
-                      <AddBubble size={p.r * 2} color={t.inkSoft} label="Add" />
+                      <AddBubble size={p.r * 2} color={t.inkSoft} label={str.add} />
                     </Pressable>
                   </Animated.View>
                 );
@@ -472,8 +460,10 @@ export default function Home() {
                   minusPulse={minusPulses[c.id] ?? 0}
                   label={
                     quiet
-                      ? `${c.name}, ${sinceMs === null ? 'never logged' : `last one ${sinceShort(sinceMs)} ago`}`
-                      : `${c.name}, ${st.count} ${word}`
+                      ? sinceMs === null
+                        ? str.bubbleNever(c.name)
+                        : str.bubbleLastAgo(c.name, sinceShort(sinceMs))
+                      : str.countIn(c.name, st.count, word)
                   }
                   onLog={() => onLog(c)}
                   onRemove={() => onRemove(c)}
@@ -497,8 +487,14 @@ export default function Home() {
         {!toast && homeStyle === 'bubbles' && moreIdeas.length > 0 && (
           <View style={{ marginBottom: 8 }}>
             <Text
-              style={{ fontFamily: font.semibold, fontSize: 13, color: t.inkSoft, paddingHorizontal: 20, marginBottom: 6 }}>
-              More ideas — tap to add
+              style={{
+                fontFamily: font.semibold,
+                fontSize: 13,
+                color: t.inkSoft,
+                paddingHorizontal: 20,
+                marginBottom: 6,
+              }}>
+              {str.moreIdeas}
             </Text>
             <ScrollView
               horizontal
@@ -508,7 +504,7 @@ export default function Home() {
                 <Pressable
                   key={s.name}
                   accessibilityRole="button"
-                  accessibilityLabel={`Add ${s.name}`}
+                  accessibilityLabel={str.addName(s.name)}
                   onPress={() => {
                     tapHaptic();
                     quickAdd(s);
@@ -536,27 +532,27 @@ export default function Home() {
             <Pressable
               style={{ flex: 1 }}
               accessibilityRole="button"
-              accessibilityLabel={`Open ${toast.category.name}`}
+              accessibilityLabel={str.openName(toast.category.name)}
               onPress={() => {
                 setToast(null);
                 openCategory(toast.category);
               }}>
               <Text variant="label" numberOfLines={1}>
-                {toast.kind === 'add' ? `Added ${toast.category.name}` : `Took one ${toast.category.name} away`}
+                {toast.kind === 'add' ? str.toastAdded(toast.category.name) : str.toastRemoved(toast.category.name)}
               </Text>
               <Text style={{ fontFamily: font.medium, fontSize: 13, color: t.inkSoft }} numberOfLines={1}>
                 {toast.kind === 'add' ? `${formatTime(new Date(toast.event.occurredAt))} · ` : ''}
-                {toast.count} today
+                {str.toastToday(toast.count)}
               </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Undo"
+              accessibilityLabel={str.undo}
               onPress={undo}
               hitSlop={10}
               style={({ pressed }) => [styles.undo, { backgroundColor: t.pill, opacity: pressed ? 0.8 : 1 }]}>
               <Icon name="undo" size={15} color={t.pillInk} strokeWidth={2.3} />
-              <Text style={{ fontFamily: font.bold, fontSize: 14, color: t.pillInk }}>Undo</Text>
+              <Text style={{ fontFamily: font.bold, fontSize: 14, color: t.pillInk }}>{str.undo}</Text>
             </Pressable>
           </Animated.View>
         )}
@@ -564,7 +560,7 @@ export default function Home() {
         <View style={[styles.row, { gap: 8, paddingHorizontal: 16 }]}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Ask a question about your history"
+            accessibilityLabel={str.askA11y}
             onPress={() => {
               tapHaptic();
               router.push('/ask');
@@ -575,10 +571,10 @@ export default function Home() {
             ]}>
             <Icon name="sparkle" size={15} color={t.pillInk} />
             <Text style={{ fontFamily: font.displaySoft, fontSize: 16, color: t.pillInk }} numberOfLines={1}>
-              Ask a question…
+              {str.askPlaceholder}
             </Text>
           </Pressable>
-          <RoundButton icon="plus" label="Add something to count" size={ASK_H} tone="glass" onPress={openAdd} />
+          <RoundButton icon="plus" label={str.addSomething} size={ASK_H} tone="glass" onPress={openAdd} />
         </View>
       </View>
     </View>
@@ -625,9 +621,7 @@ function Tip({ icon, text }: { icon: IconName; text: string }) {
       <View style={[styles.tipIcon, { backgroundColor: t.surfaceAlt }]}>
         <Icon name={icon} size={11} color={t.ink} strokeWidth={2.8} />
       </View>
-      <Text style={{ flex: 1, fontFamily: font.medium, fontSize: 13, lineHeight: 17, color: t.inkSoft }}>
-        {text}
-      </Text>
+      <Text style={{ flex: 1, fontFamily: font.medium, fontSize: 13, lineHeight: 17, color: t.inkSoft }}>{text}</Text>
     </View>
   );
 }
@@ -654,12 +648,13 @@ function ListRow({
   onOpen: () => void;
 }) {
   const t = useTheme();
+  const str = useStrings(homeStrings);
   const sw = swatch(category.color);
   return (
     <View style={[styles.listRow, { backgroundColor: t.surface, borderColor: t.line }]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${category.name}, ${count} ${periodWord}. Open details`}
+        accessibilityLabel={str.rowA11y(category.name, count, periodWord)}
         onPress={onOpen}
         style={({ pressed }) => [styles.row, { flex: 1, gap: 12, opacity: pressed ? 0.6 : 1 }]}>
         <Bubble size={48} swatch={sw} emoji={category.emoji} />
@@ -668,14 +663,14 @@ function ListRow({
             {category.name}
           </Text>
           <Text variant="caption" tone="soft" numberOfLines={1}>
-            {last ? `Last at ${formatTime(last)}` : 'None yet today'}
+            {last ? str.lastAt(formatTime(last)) : str.noneToday}
           </Text>
         </View>
       </Pressable>
       <View style={[styles.row, { gap: 8 }]}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Take one ${category.name} away`}
+          accessibilityLabel={str.takeOneAway(category.name)}
           disabled={todayCount === 0}
           onPress={onRemove}
           hitSlop={4}
@@ -690,13 +685,13 @@ function ListRow({
           <Icon name="minus" size={22} color={t.ink} strokeWidth={2.6} />
         </Pressable>
         <Text
-          accessibilityLabel={`${count} ${periodWord}`}
+          accessibilityLabel={str.countA11y(count, periodWord)}
           style={{ fontFamily: font.display, fontSize: 26, color: t.ink, minWidth: 34, textAlign: 'center' }}>
           {count}
         </Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Add one ${category.name}`}
+          accessibilityLabel={str.addOne(category.name)}
           onPress={onAdd}
           hitSlop={4}
           style={({ pressed }) => [
@@ -713,7 +708,7 @@ function ListRow({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center' },
-  header: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 20, paddingBottom: 6, zIndex: 2 },
+  header: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingBottom: 4, zIndex: 2 },
   headerBtn: { alignItems: 'center', minWidth: 50 },
   headerDisc: {
     width: 40,
@@ -724,12 +719,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  tipsWrap: { paddingHorizontal: 16, zIndex: 2 },
-  tipsToggle: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, paddingHorizontal: 4, paddingVertical: 4 },
+  syncDot: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    marginTop: 5,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tipsClose: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   tips: {
-    marginTop: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    marginHorizontal: 16,
+    marginTop: 6,
+    zIndex: 2,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     gap: 6,
     borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth * 2,
@@ -763,8 +768,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingVertical: 8,
-    paddingLeft: 14,
-    paddingRight: 8,
+    paddingStart: 14,
+    paddingEnd: 8,
     shadowOpacity: 0.14,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 6 },

@@ -1,9 +1,11 @@
+import { queryStrings } from '../../i18n/query';
+import { strings } from '../i18n';
 import {
-  MONTHS_LONG,
   addDays,
   addMonths,
   calendarDaysBetween,
   formatDate,
+  monthLong,
   parseDayKey,
   startOfDay,
   startOfMonth,
@@ -25,6 +27,7 @@ export type ResolvedRange = {
 };
 
 export function resolveRange(spec: RangeSpec, now: Date, firstEvent?: Date | null): ResolvedRange {
+  const S = strings(queryStrings);
   const today = startOfDay(now);
   const tomorrow = addDays(today, 1);
 
@@ -36,61 +39,60 @@ export function resolveRange(spec: RangeSpec, now: Date, firstEvent?: Date | nul
     // whole calendar month?
     if (from.getDate() === 1 && to.getDate() === 1 && addMonths(from, 1).getTime() === to.getTime()) {
       const name =
-        MONTHS_LONG[from.getMonth()] + (from.getFullYear() === now.getFullYear() ? '' : ` ${from.getFullYear()}`);
-      return { from, to, label: `in ${name}`, chip: name };
+        monthLong(from.getMonth()) + (from.getFullYear() === now.getFullYear() ? '' : ` ${from.getFullYear()}`);
+      return { from, to, label: S.inMonth(name), chip: name };
     }
     if (calendarDaysBetween(from, to) === 1) {
       const d = formatDate(from, now);
-      return { from, to, label: `on ${d}`, chip: d };
+      return { from, to, label: S.onDay(d), chip: d };
     }
     const chip = `${formatDate(from, now)} – ${formatDate(toDay, now)}`;
-    return { from, to, label: `between ${formatDate(from, now)} and ${formatDate(toDay, now)}`, chip };
+    return { from, to, label: S.betweenDays(formatDate(from, now), formatDate(toDay, now)), chip };
   }
 
   switch (spec.preset) {
     case 'today':
-      return { from: today, to: tomorrow, label: 'today', chip: 'Today' };
+      return { from: today, to: tomorrow, label: S.today, chip: S.todayChip };
     case 'yesterday':
-      return { from: addDays(today, -1), to: today, label: 'yesterday', chip: 'Yesterday' };
+      return { from: addDays(today, -1), to: today, label: S.yesterday, chip: S.yesterdayChip };
     case 'this_week':
-      return { from: startOfWeek(now), to: addDays(startOfWeek(now), 7), label: 'this week', chip: 'This week' };
+      return { from: startOfWeek(now), to: addDays(startOfWeek(now), 7), label: S.thisWeek, chip: S.thisWeekChip };
     case 'last_week': {
       const w = startOfWeek(now);
-      return { from: addDays(w, -7), to: w, label: 'last week', chip: 'Last week' };
+      return { from: addDays(w, -7), to: w, label: S.lastWeek, chip: S.lastWeekChip };
     }
     case 'this_month':
-      return { from: startOfMonth(now), to: addMonths(now, 1), label: 'this month', chip: 'This month' };
+      return { from: startOfMonth(now), to: addMonths(now, 1), label: S.thisMonth, chip: S.thisMonthChip };
     case 'last_month': {
       const m = startOfMonth(now);
-      return { from: addMonths(m, -1), to: m, label: 'last month', chip: 'Last month' };
+      return { from: addMonths(m, -1), to: m, label: S.lastMonth, chip: S.lastMonthChip };
     }
     case 'this_year':
       return {
         from: startOfYear(now),
         to: new Date(now.getFullYear() + 1, 0, 1),
-        label: 'this year',
+        label: S.thisYear,
         chip: String(now.getFullYear()),
       };
     case 'last_year':
       return {
         from: new Date(now.getFullYear() - 1, 0, 1),
         to: startOfYear(now),
-        label: 'last year',
+        label: S.lastYear,
         chip: String(now.getFullYear() - 1),
       };
     case 'last_n_days': {
       const n = Math.max(1, Math.min(3650, Math.round(spec.n ?? 30)));
-      if (n === 1) return { from: today, to: tomorrow, label: 'today', chip: 'Today' };
-      const label = `in the last ${n} days`;
-      return { from: addDays(today, -(n - 1)), to: tomorrow, label, chip: `Last ${n} days` };
+      if (n === 1) return { from: today, to: tomorrow, label: S.today, chip: S.todayChip };
+      return { from: addDays(today, -(n - 1)), to: tomorrow, label: S.lastNDays(n), chip: S.lastNDaysChip(n) };
     }
     case 'all_time':
     default:
       return {
         from: firstEvent ? startOfDay(firstEvent) : today,
         to: tomorrow,
-        label: 'so far',
-        chip: 'All time',
+        label: S.soFar,
+        chip: S.allTimeChip,
         allTime: true,
       };
   }
@@ -98,6 +100,7 @@ export function resolveRange(spec: RangeSpec, now: Date, firstEvent?: Date | nul
 
 /** The period of equal length right before `r` — calendar-aware for weeks/months. */
 export function previousRange(spec: RangeSpec, r: ResolvedRange, now: Date): ResolvedRange {
+  const S = strings(queryStrings);
   if ('preset' in spec) {
     switch (spec.preset) {
       case 'today':
@@ -110,7 +113,7 @@ export function previousRange(spec: RangeSpec, r: ResolvedRange, now: Date): Res
         return resolveRange({ preset: 'last_year' }, now);
       case 'last_week': {
         const w = startOfWeek(now);
-        return { from: addDays(w, -14), to: addDays(w, -7), label: 'the week before', chip: 'Week before' };
+        return { from: addDays(w, -14), to: addDays(w, -7), label: S.weekBefore, chip: S.weekBeforeChip };
       }
       case 'last_month': {
         const m = startOfMonth(now);
@@ -118,8 +121,8 @@ export function previousRange(spec: RangeSpec, r: ResolvedRange, now: Date): Res
         return {
           from,
           to: addMonths(m, -1),
-          label: `in ${MONTHS_LONG[from.getMonth()]}`,
-          chip: MONTHS_LONG[from.getMonth()],
+          label: S.inMonth(monthLong(from.getMonth())),
+          chip: monthLong(from.getMonth()),
         };
       }
       default:
@@ -128,7 +131,7 @@ export function previousRange(spec: RangeSpec, r: ResolvedRange, now: Date): Res
   }
   const days = Math.max(1, calendarDaysBetween(r.from, r.to));
   const from = addDays(r.from, -days);
-  return { from, to: r.from, label: `the ${days} days before`, chip: `Previous ${days} days` };
+  return { from, to: r.from, label: S.daysBefore(days), chip: S.daysBeforeChip(days) };
 }
 
 /**

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { useLangStore } from '../src/lib/i18n';
 import { executeQuery } from '../src/lib/query/execute';
-import { parseQuestion } from '../src/lib/query/parse-local';
+import { parseQuestion, suggestQuestions } from '../src/lib/query/parse-local';
 import { sanitizeSpec } from '../src/lib/query/sanitize';
 import { periodStats, streaks, gaps } from '../src/lib/stats';
 import type { Category, OccurEvent } from '../src/lib/types';
@@ -141,6 +142,61 @@ describe('executor', () => {
     ]);
     assert.deepEqual(ok, { intent: 'count', categoryIds: ['smoke'], range: { preset: 'last_n_days', n: 7 } });
     assert.equal(sanitizeSpec({ intent: 'drop table', categoryIds: [] }, ['smoke']), null);
+  });
+});
+
+describe('arabic', () => {
+  // same data, Arabic names
+  const arCats: Category[] = cats.map((c) => ({
+    ...c,
+    name: ({ smoke: 'تدخين', coffee: 'قهوة الصباح', read: 'قراءة' } as Record<string, string>)[c.id],
+  }));
+  const arAsk = (q: string) => executeQuery(parseQuestion(q, arCats, NOW), { categories: arCats, events, now: NOW });
+  const withArabic = (fn: () => void) => {
+    useLangStore.setState({ lang: 'ar' });
+    try {
+      fn();
+    } finally {
+      useLangStore.setState({ lang: 'en' });
+    }
+  };
+
+  it('parses every Arabic suggestion on device', () => {
+    withArabic(() => {
+      const qs = suggestQuestions(arCats);
+      const specs = qs.map((q) => parseQuestion(q, arCats, NOW));
+      assert.equal(specs[0].intent, 'count');
+      assert.deepEqual(specs[0].categoryIds, ['smoke']);
+      assert.deepEqual(specs[0].range, { preset: 'last_n_days', n: 30 });
+      assert.equal(specs[1].intent, 'peak');
+      assert.equal(specs[1].groupBy, 'hour');
+      assert.equal(specs[2].intent, 'last');
+      assert.deepEqual(specs[2].categoryIds, ['coffee']); // name contains الصباح (morning)
+      assert.equal(specs[3].intent, 'compare');
+      assert.deepEqual(specs[3].range, { preset: 'this_week' });
+      assert.deepEqual(specs[3].compareTo, { preset: 'last_week' });
+      assert.equal(specs[4].intent, 'ranking');
+      assert.deepEqual(specs[4].range, { preset: 'this_month' });
+      assert.equal(specs[5].intent, 'gap');
+    });
+  });
+
+  it('answers in Arabic with Arabic plurals and Western digits', () => {
+    withArabic(() => {
+      const a = arAsk('كم مرة دخنت تدخين في آخر ٧ أيام؟');
+      assert.equal(a.headline, String(7 * 3 + 1 - 1)); // today stops at 18:00; one Friday extra
+      assert.match(a.sentence, /^سجّلت تدخين \d+ مرة خلال آخر 7 أيام\./);
+      assert.ok(a.interpretation.includes('آخر 7 أيام'));
+      const last = arAsk('متى آخر مرة سجلت قراءة؟');
+      assert.match(last.sentence, /آخر مرة سجّلت فيها قراءة/);
+      const cmp = arAsk('قارن تدخين اليوم مقابل أمس');
+      assert.equal(cmp.headline, '2 مقابل 2');
+    });
+  });
+
+  it('keeps English when English is active', () => {
+    const a = ask('How many times did I smoke today?');
+    assert.match(a.sentence, /^You logged Smoking 2 times today\./);
   });
 });
 

@@ -2,6 +2,7 @@ import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { closeDialog, useDialog } from '@/lib/dialog';
+import { isRTL, useLang } from '@/lib/i18n';
 import { font, radius, useTheme } from '@/theme';
 import { Text } from './text';
 
@@ -10,6 +11,7 @@ export function DialogHost() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const current = useDialog((s) => s.current);
+  const lang = useLang();
   if (!current) return null;
 
   const cancel = current.actions.find((a) => a.style === 'cancel');
@@ -21,7 +23,11 @@ export function DialogHost() {
   return (
     <Modal transparent visible animationType="fade" onRequestClose={dismiss}>
       <Pressable
-        style={[styles.backdrop, { backgroundColor: t.overlay }, current.sheet && styles.backdropSheet]}
+        style={[
+          styles.backdrop,
+          { backgroundColor: t.overlay, direction: isRTL(lang) ? 'rtl' : 'ltr' },
+          current.sheet && styles.backdropSheet,
+        ]}
         onPress={dismiss}>
         <Pressable
           onPress={() => {}}

@@ -18,7 +18,9 @@ import { Bubble } from '@/components/bubble';
 import { PillButton } from '@/components/buttons';
 import { GoogleMark } from '@/components/icon';
 import { Text } from '@/components/text';
+import { signInStrings } from '@/i18n/sign-in';
 import { signInWithGoogle, startDemo } from '@/lib/auth';
+import { useStrings } from '@/lib/i18n';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { font, useTheme } from '@/theme';
 import { swatch } from '@/theme/palette';
@@ -63,6 +65,7 @@ export default function SignIn() {
   const [busy, setBusy] = useState<'google' | 'guest' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const stage = Math.min(height * 0.5, 460);
+  const S = useStrings(signInStrings);
 
   const run = async (which: 'google' | 'guest', fn: () => Promise<unknown>) => {
     setError(null);
@@ -70,7 +73,7 @@ export default function SignIn() {
     try {
       await fn();
     } catch (e: any) {
-      setError(e?.message ?? 'Something went wrong. Please try again.');
+      setError(e?.message ?? S.error);
     } finally {
       setBusy(null);
     }
@@ -102,7 +105,7 @@ export default function SignIn() {
             swatch={swatch('apricot')}
             emoji="☕"
             count={3}
-            name="Coffee"
+            name={S.coffee}
             dots={[8.2, 11.5, 15.1]}
             nowHour={16.3}
           />
@@ -113,7 +116,7 @@ export default function SignIn() {
             swatch={swatch('sky')}
             emoji="💧"
             count={6}
-            name="Water"
+            name={S.water}
             dots={[8, 10, 12.5, 14, 15.5, 16]}
             nowHour={16.3}
           />
@@ -124,7 +127,7 @@ export default function SignIn() {
             swatch={swatch('slate')}
             emoji="🚬"
             count={2}
-            name="Smoking"
+            name={S.smoking}
             dots={[9.5, 13.2]}
             nowHour={16.3}
           />
@@ -138,9 +141,10 @@ export default function SignIn() {
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 20 }]}>
         <Animated.View entering={FadeInDown.duration(600)}>
           <Text variant="eyebrow" tone="soft">
-            How many times, and when?
+            {S.eyebrow}
           </Text>
           <Text
+            keepFont
             style={{
               fontFamily: font.display,
               fontSize: 64,
@@ -152,18 +156,17 @@ export default function SignIn() {
             Occur
           </Text>
           <Text variant="subheading" tone="soft" style={{ fontSize: 24, lineHeight: 28 }}>
-            Click. Click. Done.
+            {S.tagline}
           </Text>
           <Text variant="body" tone="soft" style={{ marginTop: 12, maxWidth: 340 }}>
-            Make a bubble for anything you want to count. Tap it when it happens — Occur remembers when, and answers
-            your questions about it later.
+            {S.pitch}
           </Text>
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(150).duration(600)} style={{ gap: 10, marginTop: 26 }}>
           {isSupabaseConfigured && (
             <PillButton
-              label="Continue with Google"
+              label={S.google}
               leading={
                 <View style={[styles.gBadge, { backgroundColor: '#fff' }]}>
                   <GoogleMark size={16} />
@@ -177,14 +180,12 @@ export default function SignIn() {
           <PillButton
             variant={isSupabaseConfigured ? 'ghost' : 'ink'}
             icon={isSupabaseConfigured ? undefined : 'sparkle'}
-            label="Try it without an account"
+            label={S.guest}
             disabled={!!busy}
             onPress={() => run('guest', startDemo)}
           />
           <Text variant="caption" tone="faint" style={{ textAlign: 'center' }}>
-            {isSupabaseConfigured
-              ? 'No account? Explore with sample data — it stays on this phone.'
-              : 'Runs with sample data on this phone. Google sign-in turns on once Supabase keys are in .env.local.'}
+            {isSupabaseConfigured ? S.guestHint : S.noBackendHint}
           </Text>
           {!!error && (
             <Text variant="caption" tone="bad" style={{ textAlign: 'center' }}>

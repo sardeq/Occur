@@ -1,6 +1,9 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { componentStrings } from '@/i18n/home';
+import { useLang, useStrings } from '@/lib/i18n';
 import type { CategoryInput } from '@/lib/store';
+import { isSuggestionUsed, localizeSuggestion } from '@/lib/suggestions';
 import { font, radius, useTheme } from '@/theme';
 import { alpha, swatch } from '@/theme/palette';
 import { Bubble } from './bubble';
@@ -25,16 +28,20 @@ export function IdeasGrid({
   columns?: number;
 }) {
   const t = useTheme();
+  const str = useStrings(componentStrings);
+  const lang = useLang();
   return (
     <View style={styles.grid}>
-      {ideas.map((s) => {
-        const on = added.has(s.name.toLowerCase());
+      {ideas.map((idea) => {
+        // tapping adds the idea under its name in the current language
+        const s = localizeSuggestion(idea, lang);
+        const on = added.has(s.name.toLowerCase()) || isSuggestionUsed(s, added);
         const sw = swatch(s.color);
         return (
-          <View key={s.name} style={{ width: `${100 / columns}%`, padding: 5 }}>
+          <View key={idea.name} style={{ width: `${100 / columns}%`, padding: 5 }}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={on ? `${s.name}, added` : `Add ${s.name}`}
+              accessibilityLabel={on ? str.ideaAdded(s.name) : str.ideaAdd(s.name)}
               accessibilityState={{ selected: on }}
               onPress={() => {
                 tapHaptic();
@@ -81,7 +88,7 @@ const styles = StyleSheet.create({
   tick: {
     position: 'absolute',
     top: 8,
-    right: 8,
+    end: 8,
     width: 26,
     height: 26,
     borderRadius: 13,

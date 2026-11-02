@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Share, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/icon';
@@ -9,6 +9,8 @@ import { NavButton, PillButton, Segmented } from '@/components/buttons';
 import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
 import { signOut, useAuth } from '@/lib/auth';
+import { settingsStrings } from '@/i18n/settings';
+import { useLang, useStrings } from '@/lib/i18n';
 import { setPref, usePrefs } from '@/lib/prefs';
 import { showDialog } from '@/lib/dialog';
 import { deleteAllData, resetData, sync, useData, wipeLocalCache } from '@/lib/store';
@@ -70,6 +72,10 @@ export default function Settings() {
   const demo = status === 'demo';
   const themePref = usePrefs((s) => s.theme);
   const homeStyle = usePrefs((s) => s.homeStyle);
+  const tips = usePrefs((s) => s.tips);
+  const languagePref = usePrefs((s) => s.language);
+  const lang = useLang();
+  const S = useStrings(settingsStrings);
 
   const exportCsv = async () => {
     const names = new Map(categories.map((c) => [c.id, c]));
@@ -108,27 +114,19 @@ export default function Settings() {
   };
 
   const confirmWipe = () =>
-    showDialog(
-      'Delete everything?',
-      `This deletes ${categories.length} bubbles and ${events.length} entries${demo ? '' : ' from your account'}. It can't be undone.`,
-      [
-        { label: 'Cancel', style: 'cancel' },
-        { label: 'Delete everything', style: 'destructive', onPress: () => deleteAllData() },
-      ],
-    );
+    showDialog(S.wipeTitle, S.wipeBody(categories.length, events.length, demo), [
+      { label: S.cancel, style: 'cancel' },
+      { label: S.deleteEverything, style: 'destructive', onPress: () => deleteAllData() },
+    ]);
 
   const doSignOut = () =>
     showDialog(
-      demo ? 'Leave the demo?' : 'Sign out?',
-      demo
-        ? 'The sample data on this phone will be reset. You can sign in with Google or start the demo again.'
-        : pending
-          ? `${pending} changes haven't synced yet and will be lost.`
-          : 'Your data stays safe in your account.',
+      demo ? S.leaveDemoTitle : S.signOutTitle,
+      demo ? S.leaveDemoBody : pending ? S.unsyncedBody(pending) : S.safeBody,
       [
-        { label: 'Cancel', style: 'cancel' },
+        { label: S.cancel, style: 'cancel' },
         {
-          label: demo ? 'Leave demo' : 'Sign out',
+          label: demo ? S.leaveDemo : S.signOut,
           style: 'destructive',
           onPress: () => {
             if (user) wipeLocalCache(user.id);
@@ -139,23 +137,23 @@ export default function Settings() {
       ],
     );
 
-  const displayName = demo ? 'Demo mode' : (user?.name ?? user?.email ?? 'You');
+  const displayName = demo ? S.demoMode : (user?.name ?? user?.email ?? S.you);
   const syncLine = demo
-    ? 'Everything stays on this device.'
+    ? S.staysOnDevice
     : pending
-      ? `${pending} ${pending === 1 ? 'change' : 'changes'} waiting to sync${syncError ? ' — offline' : ''}`
+      ? S.waiting(pending, !!syncError)
       : lastSyncedAt
-        ? `All synced · ${formatRelative(new Date(lastSyncedAt), now)}`
-        : 'Not synced yet';
+        ? S.allSynced(formatRelative(new Date(lastSyncedAt), now))
+        : S.notSynced;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={[styles.topbar, { paddingTop: insets.top + 8 }]}>
-        <NavButton icon="back" label="Back" accessibilityLabel="Back to home" onPress={() => router.back()} />
+        <NavButton icon="back" label={S.back} accessibilityLabel={S.backA11y} onPress={() => router.back()} />
       </View>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 14 }}>
-        <Text variant="title" style={{ marginLeft: 4 }}>
-          Settings
+        <Text variant="title" style={{ marginStart: 4 }}>
+          {S.title}
         </Text>
         <View style={[styles.card, styles.profile, { backgroundColor: t.surface, borderColor: t.line }]}>
           <View style={[styles.avatar, { backgroundColor: t.surfaceAlt }]}>
@@ -168,49 +166,86 @@ export default function Settings() {
           <View style={{ flex: 1 }}>
             <Text variant="heading">{displayName}</Text>
             <Text variant="caption" tone="soft">
-              {demo ? 'Sample data, no account' : (user?.email ?? '')}
+              {demo ? S.demoSub : (user?.email ?? '')}
             </Text>
           </View>
         </View>
 
         <View style={[styles.card, styles.prefCard, { backgroundColor: t.surface, borderColor: t.line }]}>
-          <Text variant="bodyStrong">Appearance</Text>
+          <Text variant="bodyStrong">{S.language}</Text>
           <Text variant="caption" tone="soft">
-            Light or dark colours. “Automatic” follows your phone.
+            {languagePref === 'auto' ? S.languageAuto(lang === 'ar') : S.languageManual}
           </Text>
           <Segmented
-            accessibilityLabel="Appearance"
-            value={themePref}
-            onChange={(v) => setPref('theme', v)}
+            accessibilityLabel={S.language}
+            value={languagePref}
+            onChange={(v) => setPref('language', v)}
             options={[
-              { key: 'system', label: 'Automatic', icon: 'phone' },
-              { key: 'light', label: 'Light', icon: 'sun' },
-              { key: 'dark', label: 'Dark', icon: 'moon' },
+              { key: 'auto', label: S.automatic, icon: 'globe' },
+              { key: 'en', label: 'English' },
+              { key: 'ar', label: 'العربية' },
             ]}
           />
         </View>
 
         <View style={[styles.card, styles.prefCard, { backgroundColor: t.surface, borderColor: t.line }]}>
-          <Text variant="bodyStrong">Home screen</Text>
+          <Text variant="bodyStrong">{S.appearance}</Text>
           <Text variant="caption" tone="soft">
-            Bubbles, or a simple list with big + and − buttons.
+            {S.appearanceHint}
           </Text>
           <Segmented
-            accessibilityLabel="Home screen style"
+            accessibilityLabel={S.appearance}
+            value={themePref}
+            onChange={(v) => setPref('theme', v)}
+            options={[
+              { key: 'system', label: S.automatic, icon: 'phone' },
+              { key: 'light', label: S.light, icon: 'sun' },
+              { key: 'dark', label: S.dark, icon: 'moon' },
+            ]}
+          />
+        </View>
+
+        <View style={[styles.card, styles.prefCard, { backgroundColor: t.surface, borderColor: t.line }]}>
+          <Text variant="bodyStrong">{S.homeScreen}</Text>
+          <Text variant="caption" tone="soft">
+            {S.homeScreenHint}
+          </Text>
+          <Segmented
+            accessibilityLabel={S.homeStyleA11y}
             value={homeStyle}
             onChange={(v) => setPref('homeStyle', v)}
             options={[
-              { key: 'bubbles', label: 'Bubbles', icon: 'bubbles' },
-              { key: 'list', label: 'List', icon: 'list' },
+              { key: 'bubbles', label: S.bubbles, icon: 'bubbles' },
+              { key: 'list', label: S.list, icon: 'list' },
             ]}
           />
+        </View>
+
+        <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line }]}>
+          <View style={styles.rowItem}>
+            <Icon name="sparkle" size={20} color={t.ink} />
+            <View style={{ flex: 1 }}>
+              <Text variant="bodyStrong">{S.tips}</Text>
+              <Text variant="caption" tone="soft">
+                {S.tipsHint}
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel={S.tips}
+              value={tips}
+              onValueChange={(v) => setPref('tips', v)}
+              trackColor={{ false: t.surfaceAlt, true: t.good }}
+              thumbColor={Platform.OS === 'android' ? t.surface : undefined}
+              ios_backgroundColor={t.surfaceAlt}
+            />
+          </View>
         </View>
 
         <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line }]}>
           <View style={[styles.rowItem]}>
             <Icon name={syncError && pending ? 'cloudOff' : 'cloud'} size={20} color={t.ink} />
             <View style={{ flex: 1 }}>
-              <Text variant="bodyStrong">{demo ? 'Local only' : syncing ? 'Syncing…' : 'Sync'}</Text>
+              <Text variant="bodyStrong">{demo ? S.localOnly : syncing ? S.syncing : S.sync}</Text>
               <Text variant="caption" tone="soft">
                 {syncLine}
               </Text>
@@ -220,30 +255,28 @@ export default function Settings() {
                 accessibilityRole="button"
                 onPress={() => void sync()}
                 style={[styles.small, { borderColor: t.lineStrong }]}>
-                <Text variant="label">Sync now</Text>
+                <Text variant="label">{S.syncNow}</Text>
               </Pressable>
             )}
           </View>
         </View>
 
         <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line }]}>
-          <Row icon="share" label="Export as CSV" detail={`${events.length} entries`} onPress={exportCsv} />
+          <Row icon="share" label={S.exportCsv} detail={S.entries(events.length)} onPress={exportCsv} />
           <View style={[styles.sep, { backgroundColor: t.line }]} />
-          <Row icon="trash" label="Delete all my data" onPress={confirmWipe} danger />
+          <Row icon="trash" label={S.deleteAll} onPress={confirmWipe} danger />
         </View>
 
         <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line, padding: 16, gap: 6 }]}>
-          <Text variant="bodyStrong">How Occur works</Text>
+          <Text variant="bodyStrong">{S.howTitle}</Text>
           <Text variant="caption" tone="soft">
-            Taps are saved on your phone instantly and synced in the background, so counting works offline. When you ask
-            a question, an AI model turns your words into a small structured query; your phone then counts the answer
-            from your own log. The model never sees your history.
+            {S.howBody}
           </Text>
         </View>
 
-        <PillButton variant="ghost" label={demo ? 'Leave demo' : 'Sign out'} onPress={doSignOut} />
+        <PillButton variant="ghost" label={demo ? S.leaveDemo : S.signOut} onPress={doSignOut} />
         <Text variant="caption" tone="faint" style={{ textAlign: 'center' }}>
-          Occur {Constants.expoConfig?.version ?? ''} · How many times, and when?
+          {S.footer(Constants.expoConfig?.version ?? '')}
         </Text>
       </ScrollView>
     </View>
@@ -269,7 +302,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   rowItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14 },
-  sep: { height: StyleSheet.hairlineWidth * 2, marginLeft: 50 },
+  sep: { height: StyleSheet.hairlineWidth * 2, marginStart: 50 },
   small: {
     paddingHorizontal: 12,
     height: 32,

@@ -15,21 +15,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bubble } from '@/components/bubble';
 import { Chip, NavButton, PillButton, tapHaptic } from '@/components/buttons';
 import { Text } from '@/components/text';
+import { editingStrings } from '@/i18n/editing';
 import { showDialog } from '@/lib/dialog';
+import { useLang, useStrings } from '@/lib/i18n';
 import { requestLocationPermission } from '@/lib/location';
 import { addCategory, deleteCategory, updateCategory, useData } from '@/lib/store';
-import { EMOJIS, SUGGESTIONS } from '@/lib/suggestions';
+import { EMOJIS, isSuggestionUsed, localSuggestions } from '@/lib/suggestions';
 import type { Goal } from '@/lib/types';
-import { font, radius, useTheme } from '@/theme';
-import { PALETTE, alpha, nextColor, swatch } from '@/theme/palette';
+import { radius, useFont, useTheme } from '@/theme';
+import { PALETTE, alpha, nextColor, swatch, swatchName } from '@/theme/palette';
 
-const PLACEHOLDERS = ['Coffee', 'Cigarettes', 'Push-ups', 'Headaches', 'Glasses of water', 'Eating out', 'Pages read'];
-
-const GOALS: { key: Goal; title: string; body: string }[] = [
-  { key: 'track', title: 'Just count', body: 'No judgement, just the facts.' },
-  { key: 'more', title: 'Do more', body: 'Going up shows as good news.' },
-  { key: 'less', title: 'Do less', body: 'Breaks and drops show as wins.' },
-];
+const GOAL_KEYS: Goal[] = ['track', 'more', 'less'];
 
 /** First grapheme of whatever the user typed (emoji can be several code units). */
 function firstGrapheme(s: string): string {
@@ -46,6 +42,9 @@ function firstGrapheme(s: string): string {
 export default function EditCategory() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const S = useStrings(editingStrings);
+  const lang = useLang();
+  const f = useFont();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const categories = useData((s) => s.categories);
   const eventCount = useData((s) => (id ? s.events.filter((e) => e.categoryId === id).length : 0));
@@ -62,7 +61,7 @@ export default function EditCategory() {
 
   useEffect(() => {
     if (editing) return;
-    const i = setInterval(() => setPh((p) => (p + 1) % PLACEHOLDERS.length), 1800);
+    const i = setInterval(() => setPh((p) => p + 1), 1800);
     return () => clearInterval(i);
   }, [editing]);
 
@@ -84,34 +83,24 @@ export default function EditCategory() {
     const ok = await requestLocationPermission();
     if (ok) setTrackLocation(true);
     else
-      showDialog(
-        'Location is off',
-        Platform.OS === 'web'
-          ? 'Places are recorded on the phone app only.'
-          : 'Occur needs “While Using the App” location access to remember where. You can turn it on in Settings.',
-        [{ label: 'OK', style: 'cancel' }],
-      );
+      showDialog(S.locationOff, Platform.OS === 'web' ? S.locationWeb : S.locationNative, [
+        { label: S.ok, style: 'cancel' },
+      ]);
   };
 
   const confirmDelete = () => {
     if (!existing) return;
-    showDialog(
-      `Delete ${existing.name}?`,
-      eventCount
-        ? `This removes the bubble and all ${eventCount} entries. It can't be undone.`
-        : 'This removes the bubble.',
-      [
-        { label: 'Cancel', style: 'cancel' },
-        {
-          label: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            deleteCategory(existing.id);
-            router.dismissTo('/');
-          },
+    showDialog(S.deleteTitle(existing.name), eventCount ? S.deleteWithEntries(eventCount) : S.deleteBubbleOnly, [
+      { label: S.cancel, style: 'cancel' },
+      {
+        label: S.delete,
+        style: 'destructive',
+        onPress: () => {
+          deleteCategory(existing.id);
+          router.dismissTo('/');
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const sw = swatch(color);
@@ -121,17 +110,17 @@ export default function EditCategory() {
       style={{ flex: 1, backgroundColor: t.bg }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.topbar, { paddingTop: Platform.OS === 'ios' ? 14 : insets.top + 8 }]}>
-        <NavButton icon="close" label="Cancel" onPress={() => router.back()} />
+        <NavButton icon="close" label={S.cancel} onPress={() => router.back()} />
         {editing ? (
           <NavButton
             icon="trash"
-            label="Delete"
-            accessibilityLabel={`Delete ${existing.name}`}
+            label={S.delete}
+            accessibilityLabel={S.deleteA11y(existing.name)}
             onPress={confirmDelete}
           />
         ) : (
           <Text variant="label" tone="soft">
-            New bubble
+            {S.newBubble}
           </Text>
         )}
       </View>
@@ -145,7 +134,7 @@ export default function EditCategory() {
             size={148}
             swatch={sw}
             emoji={emoji}
-            name={trimmed || PLACEHOLDERS[ph]}
+            name={trimmed || S.placeholders[ph % S.placeholders.length]}
             count={0}
             dots={[]}
             dimCount
@@ -154,24 +143,27 @@ export default function EditCategory() {
 
         <View style={styles.section}>
           <Text variant="title" style={{ textAlign: 'center' }}>
-            {editing ? 'What are you counting?' : 'What would you like to count?'}
+            {editing ? S.whatCounting : S.whatToCount}
           </Text>
           <TextInput
             value={name}
             onChangeText={setName}
             autoFocus={!editing}
             maxLength={40}
-            placeholder={PLACEHOLDERS[ph]}
+            placeholder={S.placeholders[ph % S.placeholders.length]}
             placeholderTextColor={t.inkFaint}
             returnKeyType="done"
             onSubmitEditing={save}
             autoCapitalize="sentences"
-            style={[styles.input, { color: t.ink, borderColor: duplicate ? t.bad : t.lineStrong }]}
-            accessibilityLabel="Name"
+            style={[
+              styles.input,
+              { fontFamily: f.display, color: t.ink, borderColor: duplicate ? t.bad : t.lineStrong },
+            ]}
+            accessibilityLabel={S.nameA11y}
           />
           {duplicate && (
             <Text variant="caption" tone="bad" style={{ textAlign: 'center', marginTop: 6 }}>
-              You already have a bubble called “{trimmed}”.
+              {S.duplicate(trimmed)}
             </Text>
           )}
         </View>
@@ -182,27 +174,29 @@ export default function EditCategory() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: 8, paddingHorizontal: 20 }}
             style={{ marginTop: 14 }}>
-            {SUGGESTIONS.filter((s) => !usedNames.has(s.name.toLowerCase())).map((s) => (
-              <Chip
-                key={s.name}
-                label={s.name}
-                leading={<Text style={{ fontSize: 15 }}>{s.emoji}</Text>}
-                active={trimmed === s.name}
-                onPress={() => {
-                  setName(s.name);
-                  setEmoji(s.emoji);
-                  setColor(s.color);
-                  setGoal(s.goal);
-                  setTrackLocation(false);
-                }}
-              />
-            ))}
+            {localSuggestions(lang)
+              .filter((s) => !isSuggestionUsed(s, usedNames))
+              .map((s) => (
+                <Chip
+                  key={s.name}
+                  label={s.name}
+                  leading={<Text style={{ fontSize: 15 }}>{s.emoji}</Text>}
+                  active={trimmed === s.name}
+                  onPress={() => {
+                    setName(s.name);
+                    setEmoji(s.emoji);
+                    setColor(s.color);
+                    setGoal(s.goal);
+                    setTrackLocation(false);
+                  }}
+                />
+              ))}
           </ScrollView>
         )}
 
         <View style={styles.section}>
           <Text variant="eyebrow" tone="soft" style={styles.eyebrow}>
-            Icon
+            {S.icon}
           </Text>
           <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line }]}>
             <View style={styles.emojiGrid}>
@@ -210,7 +204,7 @@ export default function EditCategory() {
                 <Pressable
                   key={e}
                   accessibilityRole="button"
-                  accessibilityLabel={`Icon ${e}`}
+                  accessibilityLabel={S.iconA11y(e)}
                   onPress={() => {
                     tapHaptic();
                     setEmoji(e);
@@ -222,7 +216,7 @@ export default function EditCategory() {
             </View>
             <View style={[styles.customRow, { borderTopColor: t.line }]}>
               <Text variant="label" tone="soft">
-                Or type any emoji
+                {S.typeEmoji}
               </Text>
               <TextInput
                 value={customEmoji}
@@ -235,7 +229,7 @@ export default function EditCategory() {
                 placeholderTextColor={t.inkFaint}
                 style={[styles.customInput, { color: t.ink, backgroundColor: t.bg }]}
                 maxLength={8}
-                accessibilityLabel="Custom emoji"
+                accessibilityLabel={S.customEmojiA11y}
               />
             </View>
           </View>
@@ -243,14 +237,14 @@ export default function EditCategory() {
 
         <View style={styles.section}>
           <Text variant="eyebrow" tone="soft" style={styles.eyebrow}>
-            Colour
+            {S.colour}
           </Text>
           <View style={styles.swatches}>
             {PALETTE.map((p) => (
               <Pressable
                 key={p.key}
                 accessibilityRole="button"
-                accessibilityLabel={p.name}
+                accessibilityLabel={swatchName(p, lang)}
                 accessibilityState={{ selected: color === p.key }}
                 onPress={() => {
                   tapHaptic();
@@ -265,10 +259,11 @@ export default function EditCategory() {
 
         <View style={styles.section}>
           <Text variant="eyebrow" tone="soft" style={styles.eyebrow}>
-            What’s the goal?
+            {S.goal}
           </Text>
           <View style={{ gap: 8 }}>
-            {GOALS.map((g) => {
+            {GOAL_KEYS.map((key) => {
+              const g = { key, ...S.goals[key] };
               const on = goal === g.key;
               return (
                 <Pressable
@@ -303,9 +298,9 @@ export default function EditCategory() {
         <View style={styles.section}>
           <View style={[styles.card, styles.switchRow, { backgroundColor: t.surface, borderColor: t.line }]}>
             <View style={{ flex: 1 }}>
-              <Text variant="bodyStrong">Remember where</Text>
+              <Text variant="bodyStrong">{S.rememberWhere}</Text>
               <Text variant="caption" tone="soft">
-                Saves an approximate place with each tap, after it’s recorded — tapping never waits for GPS.
+                {S.rememberWhereHint}
               </Text>
             </View>
             <Switch value={trackLocation} onValueChange={toggleLocation} trackColor={{ true: sw.deep }} />
@@ -314,11 +309,7 @@ export default function EditCategory() {
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-        <PillButton
-          label={editing ? 'Save changes' : `Start counting${trimmed ? ` ${trimmed}` : ''}`}
-          onPress={save}
-          disabled={!canSave}
-        />
+        <PillButton label={editing ? S.saveChanges : S.startCounting(trimmed)} onPress={save} disabled={!canSave} />
       </View>
     </KeyboardAvoidingView>
   );
@@ -333,9 +324,8 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   section: { paddingHorizontal: 20, marginTop: 22 },
-  eyebrow: { marginBottom: 10, marginLeft: 4 },
+  eyebrow: { marginBottom: 10, marginStart: 4 },
   input: {
-    fontFamily: font.display,
     fontSize: 28,
     textAlign: 'center',
     borderBottomWidth: 1.5,

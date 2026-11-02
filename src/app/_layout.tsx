@@ -5,21 +5,34 @@ import {
   Nunito_800ExtraBold,
   Nunito_900Black,
 } from '@expo-google-fonts/nunito';
+import {
+  Rubik_400Regular,
+  Rubik_500Medium,
+  Rubik_600SemiBold,
+  Rubik_700Bold,
+  Rubik_800ExtraBold,
+} from '@expo-google-fonts/rubik';
 import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { Appearance } from 'react-native';
+import { Appearance, I18nManager, View } from 'react-native';
 
 import { DialogHost } from '@/components/dialog-host';
 import { bootAuth, useAuth } from '@/lib/auth';
 import { demoSeed } from '@/lib/demo';
+import { isRTL, useLang } from '@/lib/i18n';
+import { useLanguageSync } from '@/lib/language';
 import { usePrefs } from '@/lib/prefs';
 import { initData, resetData } from '@/lib/store';
 import { useTheme } from '@/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+// Mirroring is done per language in JS (root `direction` below), never by the OS.
+try {
+  I18nManager.allowRTL(false);
+} catch {}
 
 export default function RootLayout() {
   const t = useTheme();
@@ -31,7 +44,14 @@ export default function RootLayout() {
     Nunito_700Bold,
     Nunito_800ExtraBold,
     Nunito_900Black,
+    Rubik_400Regular,
+    Rubik_500Medium,
+    Rubik_600SemiBold,
+    Rubik_700Bold,
+    Rubik_800ExtraBold,
   });
+  const lang = useLang();
+  useLanguageSync();
   const themePref = usePrefs((s) => s.theme);
 
   // Keep native UI (sheets, pickers, alerts, switches) in step with Settings → Appearance.
@@ -65,40 +85,42 @@ export default function RootLayout() {
     <ThemeProvider
       value={{ ...nav, colors: { ...nav.colors, background: t.bg, card: t.bg, text: t.ink, primary: t.ink } }}>
       <StatusBar style={t.scheme === 'dark' ? 'light' : 'dark'} />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: t.bg },
-          // swipe right from anywhere on the screen (not just the edge) to go back
-          gestureEnabled: true,
-          fullScreenGestureEnabled: true,
-        }}>
-        <Stack.Protected guard={authed} redirectTo="/sign-in">
-          <Stack.Screen name="index" />
-          <Stack.Screen name="category/[id]" />
-          <Stack.Screen name="insights" />
-          <Stack.Screen name="add" />
-          <Stack.Screen name="edit-category" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="ask" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="settings" />
-          <Stack.Screen
-            name="log-time"
-            options={{
-              presentation: 'formSheet',
-              sheetAllowedDetents: [0.62, 0.92],
-              sheetGrabberVisible: true,
-              sheetCornerRadius: 28,
-              contentStyle: { backgroundColor: t.surface },
-            }}
-          />
-        </Stack.Protected>
-        <Stack.Protected guard={!authed} redirectTo="/">
-          <Stack.Screen name="sign-in" options={{ animation: 'fade' }} />
-        </Stack.Protected>
-        <Stack.Screen name="auth/callback" />
-        <Stack.Screen name="explore" />
-      </Stack>
-      <DialogHost />
+      <View style={{ flex: 1, direction: isRTL(lang) ? 'rtl' : 'ltr' }}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: t.bg },
+            // swipe right from anywhere on the screen (not just the edge) to go back
+            gestureEnabled: true,
+            fullScreenGestureEnabled: true,
+          }}>
+          <Stack.Protected guard={authed} redirectTo="/sign-in">
+            <Stack.Screen name="index" />
+            <Stack.Screen name="category/[id]" />
+            <Stack.Screen name="insights" />
+            <Stack.Screen name="add" />
+            <Stack.Screen name="edit-category" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="ask" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="settings" />
+            <Stack.Screen
+              name="log-time"
+              options={{
+                presentation: 'formSheet',
+                sheetAllowedDetents: [0.62, 0.92],
+                sheetGrabberVisible: true,
+                sheetCornerRadius: 28,
+                contentStyle: { backgroundColor: t.surface },
+              }}
+            />
+          </Stack.Protected>
+          <Stack.Protected guard={!authed} redirectTo="/">
+            <Stack.Screen name="sign-in" options={{ animation: 'fade' }} />
+          </Stack.Protected>
+          <Stack.Screen name="auth/callback" />
+          <Stack.Screen name="explore" />
+        </Stack>
+        <DialogHost />
+      </View>
     </ThemeProvider>
   );
 }

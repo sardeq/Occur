@@ -1,6 +1,7 @@
-import { Text as RNText, type TextProps, type TextStyle } from 'react-native';
+import { Text as RNText, StyleSheet, type TextProps, type TextStyle } from 'react-native';
 
-import { font, useTheme, type Theme } from '@/theme';
+import { useLang } from '@/lib/i18n';
+import { arabicTextStyle, font, useTheme, type Theme } from '@/theme';
 
 type Variant = 'display' | 'title' | 'heading' | 'subheading' | 'body' | 'bodyStrong' | 'label' | 'caption' | 'eyebrow';
 
@@ -23,11 +24,24 @@ export function Text({
   tone = 'ink',
   color,
   style,
+  keepFont,
   ...rest
-}: TextProps & { variant?: Variant; tone?: Tone; color?: string }) {
+}: TextProps & {
+  variant?: Variant;
+  tone?: Tone;
+  color?: string;
+  /** keep the Latin font even in Arabic (e.g. the "Occur" wordmark) */
+  keepFont?: boolean;
+}) {
   const t = useTheme();
-  return <RNText {...rest} style={[styles[variant], { color: color ?? toneColor(t, tone) }, style]} />;
+  const lang = useLang();
+  const ar = lang === 'ar';
+  // In Arabic, text (even Latin, like names or the wordmark) lines up on the right unless a screen says otherwise.
+  const merged = [styles[variant], { color: color ?? toneColor(t, tone) }, ar && rtlAlign, style];
+  return <RNText {...rest} style={ar && !keepFont ? arabicTextStyle(StyleSheet.flatten(merged) ?? {}) : merged} />;
 }
+
+const rtlAlign: TextStyle = { textAlign: 'right' };
 
 function toneColor(t: Theme, tone: Tone) {
   switch (tone) {

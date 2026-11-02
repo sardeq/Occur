@@ -3,16 +3,19 @@ import { create } from 'zustand';
 import { kv } from './kv';
 
 /**
- * Device-level preferences (not synced): how the app looks and how the home
- * screen is laid out. Stored in the same persistent kv as the offline cache.
+ * Device-level preferences (not synced): how the app looks, which language it
+ * speaks and how the home screen is laid out. Stored in the same persistent kv
+ * as the offline cache.
  */
 export type ThemePref = 'system' | 'light' | 'dark';
 export type HomeStyle = 'bubbles' | 'list';
+/** "auto" picks a language from where the phone is (see `lib/i18n`). */
+export type LanguagePref = 'auto' | 'en' | 'ar';
 
-type Prefs = { theme: ThemePref; homeStyle: HomeStyle; tipsOpen: boolean };
+type Prefs = { theme: ThemePref; homeStyle: HomeStyle; tips: boolean; language: LanguagePref };
 
 const KEY = 'occur.prefs.v1';
-const defaults: Prefs = { theme: 'system', homeStyle: 'bubbles', tipsOpen: false };
+const defaults: Prefs = { theme: 'system', homeStyle: 'bubbles', tips: true, language: 'auto' };
 
 function load(): Prefs {
   try {
@@ -22,7 +25,9 @@ function load(): Prefs {
     return {
       theme: p.theme === 'light' || p.theme === 'dark' ? p.theme : 'system',
       homeStyle: p.homeStyle === 'list' ? 'list' : 'bubbles',
-      tipsOpen: p.tipsOpen === true,
+      // on unless turned off in Settings
+      tips: p.tips !== false,
+      language: p.language === 'en' || p.language === 'ar' ? p.language : 'auto',
     };
   } catch {
     return defaults;

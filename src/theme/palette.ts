@@ -13,6 +13,23 @@ export type Swatch = {
   ink: string;
 };
 
+const NAMES_AR: Record<string, string> = {
+  apricot: 'مشمشي',
+  coral: 'مرجاني',
+  rose: 'وردي',
+  lilac: 'ليلكي',
+  sky: 'سماوي',
+  mint: 'نعناعي',
+  lime: 'ليموني',
+  sand: 'رملي',
+  slate: 'حبري',
+};
+
+/** The colour's name in the app language (used for screen readers). */
+export function swatchName(s: Swatch, lang: 'en' | 'ar'): string {
+  return lang === 'ar' ? (NAMES_AR[s.key] ?? s.name) : s.name;
+}
+
 export const PALETTE: Swatch[] = [
   { key: 'apricot', name: 'Apricot', light: '#FFE6B0', base: '#FFB84F', deep: '#F0892A', ink: '#2A1A06' },
   { key: 'coral', name: 'Coral', light: '#FFD5C8', base: '#FF8F73', deep: '#E55C45', ink: '#2B0F09' },

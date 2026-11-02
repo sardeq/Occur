@@ -3,6 +3,7 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { create } from 'zustand';
 
+import { getLang } from './i18n';
 import { kv } from './kv';
 import { isSupabaseConfigured, supabase } from './supabase';
 
@@ -116,7 +117,11 @@ async function runBrowserFlow(url: string, redirectTo: string): Promise<boolean>
  */
 export async function signInWithGoogle(): Promise<boolean> {
   if (!isSupabaseConfigured)
-    throw new Error('Supabase is not configured. Add your keys to .env.local, or explore the demo.');
+    throw new Error(
+      getLang() === 'ar'
+        ? 'لم يُضبط Supabase بعد. أضف مفاتيحك إلى ‎.env.local، أو استكشف التجربة.'
+        : 'Supabase is not configured. Add your keys to .env.local, or explore the demo.',
+    );
   const redirectTo = authRedirectUrl();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',

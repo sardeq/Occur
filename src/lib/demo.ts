@@ -2,6 +2,7 @@
  * Sample data for the local demo mode (no backend needed). Deterministic
  * pseudo-random so screenshots and demos look the same every time.
  */
+import { getLang } from './i18n';
 import type { Category, OccurEvent } from './types';
 
 function rng(seed: number) {
@@ -89,6 +90,20 @@ const PATTERNS: Pattern[] = [
   },
 ];
 
+/** Demo names when the demo starts in Arabic. */
+const AR_NAMES: Record<string, string> = {
+  'demo-coffee': 'قهوة',
+  'demo-smoke': 'تدخين',
+  'demo-water': 'ماء',
+  'demo-workout': 'تمرين',
+  'demo-read': 'قراءة',
+  'demo-headache': 'صداع',
+};
+const PLACES = {
+  en: ['Rainbow St, Jabal Amman', 'Abdali Boulevard'],
+  ar: ['شارع الرينبو، جبل عمّان', 'بوليفارد العبدلي'],
+};
+
 function pickHour(r: () => number, hours: [number, number][]): number {
   const total = hours.reduce((a, [, w]) => a + w, 0);
   let x = r() * total;
@@ -101,9 +116,15 @@ function pickHour(r: () => number, hours: [number, number][]): number {
 
 export function demoSeed(now: Date = new Date(), days = 120): { categories: Category[]; events: OccurEvent[] } {
   const r = rng(42);
+  const ar = getLang() === 'ar';
+  const places = PLACES[ar ? 'ar' : 'en'];
   const created = new Date(now);
   created.setDate(created.getDate() - days);
-  const categories: Category[] = PATTERNS.map((p) => ({ ...p.cat, createdAt: created.toISOString() }));
+  const categories: Category[] = PATTERNS.map((p) => ({
+    ...p.cat,
+    name: ar ? (AR_NAMES[p.cat.id] ?? p.cat.name) : p.cat.name,
+    createdAt: created.toISOString(),
+  }));
   const events: OccurEvent[] = [];
   let n = 0;
   for (const p of PATTERNS) {
@@ -133,7 +154,7 @@ export function demoSeed(now: Date = new Date(), days = 120): { categories: Cate
           occurredAt: d.toISOString(),
           tz: null,
           source: 'tap',
-          place: p.cat.trackLocation ? (r() < 0.6 ? 'Rainbow St, Jabal Amman' : 'Abdali Boulevard') : null,
+          place: p.cat.trackLocation ? (r() < 0.6 ? places[0] : places[1]) : null,
         });
       }
     }

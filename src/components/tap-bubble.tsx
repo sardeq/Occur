@@ -14,7 +14,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { font } from '@/theme';
+import { componentStrings } from '@/i18n/home';
+import { isRTL, useLang, useStrings } from '@/lib/i18n';
+import { useFont } from '@/theme';
 import { Bubble, type BubbleProps } from './bubble';
 import { Icon } from './icon';
 
@@ -64,6 +66,11 @@ export function TapBubble({
 }: Props) {
   const size = bubble.size;
   const reduce = useReducedMotion();
+  const s = useStrings(componentStrings);
+  const rtl = isRTL(useLang());
+  const f = useFont();
+  // the "−" sits at the bottom corner on the reading-end side
+  const minusOffset = (size / 2 + 2) * 0.7071;
   const seed = hash(id);
 
   const left = useSharedValue(x - size / 2);
@@ -149,12 +156,12 @@ export function TapBubble({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={label}
-            accessibilityHint="Double tap to add one. Swipe up or down with one finger for more options."
+            accessibilityHint={s.bubbleHint}
             accessibilityActions={[
-              { name: 'activate', label: 'Add one' },
-              { name: 'decrement', label: 'Take one away' },
-              { name: 'increment', label: 'Add one' },
-              { name: 'longpress', label: 'Open details' },
+              { name: 'activate', label: s.actionAdd },
+              { name: 'decrement', label: s.actionRemove },
+              { name: 'increment', label: s.actionAdd },
+              { name: 'longpress', label: s.actionOpen },
             ]}
             onAccessibilityAction={(e) => {
               const a = e.nativeEvent.actionName;
@@ -194,23 +201,31 @@ export function TapBubble({
           </Pressable>
           <Animated.Text
             pointerEvents="none"
-            style={[styles.plus, { color: bubble.swatch.deep, top: -size * 0.02, width: size }, plusStyle]}>
+            style={[
+              styles.plus,
+              { fontFamily: f.display, color: bubble.swatch.deep, top: -size * 0.02, width: size },
+              plusStyle,
+            ]}>
             +1
           </Animated.Text>
           <Animated.Text
             pointerEvents="none"
-            style={[styles.plus, { color: bubble.swatch.deep, top: size * 0.62, width: size }, minusStyle]}>
+            style={[
+              styles.plus,
+              { fontFamily: f.display, color: bubble.swatch.deep, top: size * 0.62, width: size },
+              minusStyle,
+            ]}>
             −1
           </Animated.Text>
           {todayCount > 0 && (
             <View
               style={[
                 styles.minusWrap,
-                { left: size / 2 + (size / 2 + 2) * 0.7071 - 20, top: size / 2 + (size / 2 + 2) * 0.7071 - 20 },
+                { left: size / 2 + (rtl ? -minusOffset : minusOffset) - 20, top: size / 2 + minusOffset - 20 },
               ]}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Take one ${bubble.name ?? ''} away`}
+                accessibilityLabel={s.takeOneAway(bubble.name ?? '')}
                 hitSlop={8}
                 onPress={onRemove}
                 style={({ pressed }) => [
@@ -251,7 +266,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     textAlign: 'center',
-    fontFamily: font.display,
     fontSize: 28,
   },
 });

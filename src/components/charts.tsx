@@ -3,9 +3,10 @@ import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, G, Line, Rect, Text as SvgText } from 'react-native-svg';
 
 import { countsByDay } from '@/lib/stats';
-import { MONTHS_SHORT, WEEKDAYS_SHORT, addDays, dayKey, formatHourCompact, startOfDay, startOfWeek } from '@/lib/time';
+import { isRTL, useLang } from '@/lib/i18n';
+import { addDays, dayKey, formatHourCompact, monthShort, startOfDay, startOfWeek, weekdayInitial } from '@/lib/time';
 import type { OccurEvent } from '@/lib/types';
-import { font, useTheme } from '@/theme';
+import { useFont, useTheme } from '@/theme';
 import { alpha, type Swatch } from '@/theme/palette';
 
 export function useWidth(initial = 0) {
@@ -15,6 +16,14 @@ export function useWidth(initial = 0) {
     if (nw !== w) setW(nw);
   };
   return [w, onLayout] as const;
+}
+
+/**
+ * Time runs with the reading direction: in Arabic the charts' time axes are
+ * mirrored (oldest on the right). The radial clock is never mirrored.
+ */
+function useMirror() {
+  return isRTL(useLang());
 }
 
 /**
@@ -33,6 +42,7 @@ export function ClockChart({
   children?: ReactNode;
 }) {
   const t = useTheme();
+  const font = useFont();
   const r = size / 2;
   const ri = r * 0.46;
   const ro = r * 0.86;
@@ -110,6 +120,8 @@ export function Bars({
   showValues?: boolean;
 }) {
   const t = useTheme();
+  const font = useFont();
+  const mirror = useMirror();
   const [w, onLayout] = useWidth();
   const n = Math.max(1, values.length);
   const max = Math.max(1, ...values);
@@ -124,7 +136,7 @@ export function Bars({
         <Svg width={w} height={height}>
           {values.map((v, i) => {
             const h = v > 0 ? Math.max(4, (v / max) * chartH) : 2;
-            const x = i * slot + (slot - bw) / 2;
+            const x = (mirror ? n - 1 - i : i) * slot + (slot - bw) / 2;
             const y = valueH + chartH - h;
             const hi = highlight === i;
             return (
@@ -181,6 +193,8 @@ export function Heatmap({
   now?: Date;
 }) {
   const t = useTheme();
+  const font = useFont();
+  const mirror = useMirror();
   const [w, onLayout] = useWidth();
   const counts = countsByDay(events);
   const leftLabel = 22;
@@ -201,13 +215,19 @@ export function Heatmap({
         <Svg width={w} height={height}>
           {Array.from({ length: weeks }, (_, wi) => {
             const weekStart = addDays(start, wi * 7);
-            const x = leftLabel + wi * (cell + gap);
+            const x = mirror ? w - leftLabel - cell - wi * (cell + gap) : leftLabel + wi * (cell + gap);
             const showMonth = wi === 0 || weekStart.getDate() <= 7;
             return (
               <G key={wi}>
                 {showMonth && (
-                  <SvgText x={x} y={10} fontSize={10} fontFamily={font.semibold} fill={t.inkFaint}>
-                    {MONTHS_SHORT[weekStart.getMonth()]}
+                  <SvgText
+                    x={mirror ? x + cell : x}
+                    y={10}
+                    fontSize={10}
+                    fontFamily={font.semibold}
+                    fill={t.inkFaint}
+                    textAnchor={mirror ? 'end' : 'start'}>
+                    {monthShort(weekStart.getMonth())}
                   </SvgText>
                 )}
                 {Array.from({ length: 7 }, (_, di) => {
@@ -234,12 +254,13 @@ export function Heatmap({
           {[0, 2, 4].map((di) => (
             <SvgText
               key={di}
-              x={0}
+              x={mirror ? w : 0}
               y={16 + di * (cell + gap) + cell * 0.75}
               fontSize={10}
               fontFamily={font.semibold}
-              fill={t.inkFaint}>
-              {WEEKDAYS_SHORT[(di + 1) % 7].slice(0, 1)}
+              fill={t.inkFaint}
+              textAnchor={mirror ? 'end' : 'start'}>
+              {weekdayInitial((di + 1) % 7)}
             </SvgText>
           ))}
         </Svg>
@@ -257,10 +278,15 @@ export function DayStrip({
   now?: Date;
 }) {
   const t = useTheme();
+  const font = useFont();
+  const mirror = useMirror();
   const [w, onLayout] = useWidth();
   const h = 64;
   const pad = 10;
-  const x = (hour: number) => pad + (hour / 24) * (w - pad * 2);
+  const x = (hour: number) => {
+    const p = pad + (hour / 24) * (w - pad * 2);
+    return mirror ? w - p : p;
+  };
   const nowH = now.getHours() + now.getMinutes() / 60;
   // stack dots that collide
   const placed: { cx: number; cy: number; color: string; key: string }[] = [];

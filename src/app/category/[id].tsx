@@ -11,13 +11,13 @@ import { Bars, ClockChart, Heatmap } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
 import { useNow } from '@/hooks/use-now';
+import { insightsStrings } from '@/i18n/insights';
+import { useLang, useStrings } from '@/lib/i18n';
 import { argmax, gaps, hourHistogram, inRange, periodStats, streaks, typicalHour, weekdayHistogram } from '@/lib/stats';
 import { showActionSheet } from '@/lib/dialog';
 import { deleteEvent, logEvent, removeLatestToday, useData } from '@/lib/store';
 import {
   DAY,
-  MONTHS_SHORT,
-  WEEKDAYS_LONG,
   WEEKDAYS_SHORT,
   addDays,
   dayKey,
@@ -26,13 +26,14 @@ import {
   formatDuration,
   formatHour,
   formatTime,
+  monthShort,
   startOfDay,
+  weekdayInitial,
+  weekdayLong,
 } from '@/lib/time';
 import type { Goal, OccurEvent } from '@/lib/types';
 import { font, radius, useTheme, type Theme } from '@/theme';
 import { alpha, swatch } from '@/theme/palette';
-
-const GOAL_LABEL: Record<Goal, string> = { track: 'Just counting', more: 'Doing more', less: 'Doing less' };
 
 function deltaTone(goal: Goal, diff: number, t: Theme): string {
   if (diff === 0 || goal === 'track') return t.inkSoft;
@@ -84,15 +85,17 @@ function StatCard({
 }
 
 const RANGES = [
-  { key: '30', label: '30 days', days: 30 },
-  { key: '90', label: '90 days', days: 90 },
-  { key: 'all', label: 'All time', days: 0 },
+  { key: '30', label: 'days30', days: 30 },
+  { key: '90', label: 'days90', days: 90 },
+  { key: 'all', label: 'allTime', days: 0 },
 ] as const;
 
 export default function CategoryScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const S = useStrings(insightsStrings);
+  const lang = useLang();
   const { id } = useLocalSearchParams<{ id: string }>();
   const cat = useData((s) => s.categories.find((c) => c.id === id));
   const all = useData((s) => s.events);
@@ -142,7 +145,7 @@ export default function CategoryScreen() {
 
   const delta = (cur: number, prev: number) => {
     const d = cur - prev;
-    return { text: d === 0 ? '= same' : `${d > 0 ? '↑' : '↓'} ${Math.abs(d)}`, color: deltaTone(goal, d, t) };
+    return { text: d === 0 ? S.same : `${d > 0 ? '↑' : '↓'} ${Math.abs(d)}`, color: deltaTone(goal, d, t) };
   };
   const dT = delta(stats.today, stats.todayPrev);
   const dW = delta(stats.week, stats.weekPrev);
@@ -161,8 +164,8 @@ export default function CategoryScreen() {
 
   const onEvent = (e: OccurEvent) => {
     const d = new Date(e.occurredAt);
-    const title = `${formatDate(d, now)} at ${formatTime(d)}`;
-    const message = e.place ? `Near ${e.place}` : undefined;
+    const title = S.dayAt(formatDate(d, now), formatTime(d));
+    const message = e.place ? S.near(e.place) : undefined;
     const edit = () => router.push({ pathname: '/log-time', params: { categoryId: cat.id, eventId: e.id } });
     const del = () => {
       deleteEvent(e.id);
@@ -170,9 +173,9 @@ export default function CategoryScreen() {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     };
     showActionSheet(title, message, [
-      { label: 'Change time', onPress: edit },
-      { label: 'Delete entry', style: 'destructive', onPress: del },
-      { label: 'Cancel', style: 'cancel' },
+      { label: S.changeTime, onPress: edit },
+      { label: S.deleteEntry, style: 'destructive', onPress: del },
+      { label: S.cancel, style: 'cancel' },
     ]);
   };
 
@@ -182,11 +185,11 @@ export default function CategoryScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={[styles.topbar, { paddingTop: insets.top + 6 }]}>
-        <NavButton icon="back" label="Back" accessibilityLabel="Back to home" onPress={() => router.back()} />
+        <NavButton icon="back" label={S.back} accessibilityLabel={S.backA11y} onPress={() => router.back()} />
         <NavButton
           icon="pencil"
-          label="Edit"
-          accessibilityLabel={`Edit ${cat.name}`}
+          label={S.edit}
+          accessibilityLabel={S.editA11y(cat.name)}
           onPress={() => router.push({ pathname: '/edit-category', params: { id: cat.id } })}
         />
       </View>
@@ -194,7 +197,7 @@ export default function CategoryScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
         {/* hero */}
         <View style={styles.hero}>
-          <Pressable onPress={logNow} accessibilityRole="button" accessibilityLabel={`Log ${cat.name} now`}>
+          <Pressable onPress={logNow} accessibilityRole="button" accessibilityLabel={S.logNowA11y(cat.name)}>
             <Bubble size={92} swatch={sw} emoji={cat.emoji} />
           </Pressable>
           <View style={{ flex: 1 }}>
@@ -204,14 +207,14 @@ export default function CategoryScreen() {
             <View style={[styles.row, { gap: 8, marginTop: 6 }]}>
               <View style={[styles.tag, { backgroundColor: t.surfaceAlt }]}>
                 <Text variant="caption" tone="soft" style={{ fontFamily: font.bold }}>
-                  {GOAL_LABEL[goal]}
+                  {S.goalLabel[goal]}
                 </Text>
               </View>
               {cat.trackLocation && (
                 <View style={[styles.tag, styles.row, { backgroundColor: t.surfaceAlt, gap: 4 }]}>
                   <Icon name="pin" size={12} color={t.inkSoft} />
                   <Text variant="caption" tone="soft" style={{ fontFamily: font.bold }}>
-                    Places on
+                    {S.placesOn}
                   </Text>
                 </View>
               )}
@@ -227,25 +230,28 @@ export default function CategoryScreen() {
             { backgroundColor: alpha(sw.light, 0.28), borderColor: alpha(sw.base, 0.35) },
           ]}>
           <Text variant="eyebrow" tone="soft">
-            {goal === 'less' ? 'Time since the last one' : 'Last time'}
+            {goal === 'less' ? S.timeSince : S.lastTime}
           </Text>
           {lastEvent ? (
             <>
-              <Since last={new Date(lastEvent.occurredAt)} suffix={goal === 'less' ? undefined : 'ago'} />
+              <Since last={new Date(lastEvent.occurredAt)} suffix={goal === 'less' ? undefined : S.ago} />
               <Text variant="body" tone="soft">
-                {formatDayLabel(new Date(lastEvent.occurredAt), now)} at {formatTime(new Date(lastEvent.occurredAt))}
-                {lastEvent.place ? ` · near ${lastEvent.place}` : ''}
+                {S.dayAt(
+                  formatDayLabel(new Date(lastEvent.occurredAt), now),
+                  formatTime(new Date(lastEvent.occurredAt)),
+                )}
+                {lastEvent.place ? S.nearSuffix(lastEvent.place) : ''}
               </Text>
             </>
           ) : (
             <Text variant="heading" style={{ marginTop: 6 }}>
-              Nothing yet. Tap “Add one” the next time it happens.
+              {S.nothingYet}
             </Text>
           )}
           <View style={[styles.row, { gap: 10, marginTop: 16 }]}>
-            <PillButton label="Add one" icon="plus" onPress={logNow} style={{ flex: 1, height: 54 }} />
+            <PillButton label={S.addOne} icon="plus" onPress={logNow} style={{ flex: 1, height: 54 }} />
             <PillButton
-              label="Earlier…"
+              label={S.earlier}
               icon="clock"
               variant="ghost"
               onPress={() => router.push({ pathname: '/log-time', params: { categoryId: cat.id } })}
@@ -253,7 +259,7 @@ export default function CategoryScreen() {
             />
           </View>
           <PillButton
-            label={stats.today > 0 ? `Take one away (today: ${stats.today})` : 'Nothing to take away today'}
+            label={stats.today > 0 ? S.takeAway(stats.today) : S.nothingToTake}
             icon="minus"
             variant="ghost"
             disabled={stats.today === 0}
@@ -264,53 +270,59 @@ export default function CategoryScreen() {
 
         {/* numbers */}
         <View style={styles.grid}>
-          <StatCard label="Today" value={String(stats.today)} delta={dT.text} deltaLabel="vs yday" color={dT.color} />
           <StatCard
-            label="This week"
+            label={S.today}
+            value={String(stats.today)}
+            delta={dT.text}
+            deltaLabel={S.vsYday}
+            color={dT.color}
+          />
+          <StatCard
+            label={S.thisWeek}
             value={String(stats.week)}
             delta={dW.text}
-            deltaLabel="vs last"
+            deltaLabel={S.vsLast}
             color={dW.color}
           />
           <StatCard
-            label="This month"
+            label={S.thisMonth}
             value={String(stats.month)}
             delta={dM.text}
-            deltaLabel="vs last"
+            deltaLabel={S.vsLast}
             color={dM.color}
           />
         </View>
         <Text variant="caption" tone="faint" style={{ paddingHorizontal: 24, marginTop: 6 }}>
-          Arrows compare with the same point in the previous day, week and month.
+          {S.arrowsHint}
         </Text>
         <View style={[styles.grid, { marginTop: 10 }]}>
           <StatCard
-            label="All time"
+            label={S.allTime}
             value={String(stats.allTime)}
-            delta={stats.first ? `since ${stats.first.getDate()} ${MONTHS_SHORT[stats.first.getMonth()]}` : undefined}
+            delta={stats.first ? S.since(stats.first.getDate(), monthShort(stats.first.getMonth())) : undefined}
             color={t.inkFaint}
           />
-          <StatCard label="Per day" value={(last30 / daysTracked).toFixed(1)} delta="last 30 days" color={t.inkFaint} />
+          <StatCard label={S.perDay} value={(last30 / daysTracked).toFixed(1)} delta={S.last30} color={t.inkFaint} />
           {goal === 'less' ? (
             <StatCard
-              label="Best break"
+              label={S.bestBreak}
               value={formatDuration(gp.longestMs)}
-              delta={gp.longestTo === null && events.length ? 'happening now' : 'record'}
+              delta={gp.longestTo === null && events.length ? S.happeningNow : S.record}
               color={gp.longestTo === null && events.length ? t.good : t.inkFaint}
             />
           ) : (
-            <StatCard label="Streak" value={`${st.current}d`} delta={`best ${st.longest}d`} color={t.inkFaint} />
+            <StatCard label={S.streak} value={S.days(st.current)} delta={S.best(st.longest)} color={t.inkFaint} />
           )}
         </View>
 
         {/* when */}
         <View style={styles.section}>
           <View style={[styles.row, { justifyContent: 'space-between' }]}>
-            <Text variant="heading">When it happens</Text>
+            <Text variant="heading">{S.whenItHappens}</Text>
           </View>
           <View style={[styles.row, { gap: 8, marginTop: 12 }]}>
             {RANGES.map((r) => (
-              <Chip key={r.key} label={r.label} active={range === r.key} onPress={() => setRange(r.key)} />
+              <Chip key={r.key} label={S[r.label]} active={range === r.key} onPress={() => setRange(r.key)} />
             ))}
           </View>
           <View
@@ -328,7 +340,7 @@ export default function CategoryScreen() {
               {usual !== null && ranged.length ? (
                 <>
                   <Text variant="eyebrow" tone="faint">
-                    usually
+                    {S.usually}
                   </Text>
                   <Text style={{ fontFamily: font.display, fontSize: 30, lineHeight: 34, color: t.ink }}>
                     {formatHour(usual)}
@@ -336,27 +348,29 @@ export default function CategoryScreen() {
                 </>
               ) : (
                 <Text variant="caption" tone="faint" style={{ textAlign: 'center' }}>
-                  No entries in this range
+                  {S.noEntriesRange}
                 </Text>
               )}
             </ClockChart>
             {ranged.length > 0 && (
               <Text variant="body" tone="soft" style={{ textAlign: 'center', marginTop: 14, paddingHorizontal: 16 }}>
-                Busiest hour: {formatHour(argmax(hours))}–{formatHour(argmax(hours) + 1)} ({hours[argmax(hours)]} of{' '}
-                {ranged.length})
+                {S.busiestHour(
+                  formatHour(argmax(hours)),
+                  formatHour(argmax(hours) + 1),
+                  hours[argmax(hours)],
+                  ranged.length,
+                )}
               </Text>
             )}
           </View>
 
           <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line, padding: 16, marginTop: 12 }]}>
             <Text variant="label" tone="soft" style={{ marginBottom: 10 }}>
-              {ranged.length
-                ? `${WEEKDAYS_LONG[[1, 2, 3, 4, 5, 6, 0][argmax(weekdays)]]}s are the busiest`
-                : 'Days of the week'}
+              {ranged.length ? S.busiestWeekday(weekdayLong([1, 2, 3, 4, 5, 6, 0][argmax(weekdays)])) : S.daysOfWeek}
             </Text>
             <Bars
               values={weekdays}
-              labels={[1, 2, 3, 4, 5, 6, 0].map((i) => WEEKDAYS_SHORT[i])}
+              labels={[1, 2, 3, 4, 5, 6, 0].map((i) => (lang === 'ar' ? weekdayInitial(i) : WEEKDAYS_SHORT[i]))}
               color={sw.deep}
               highlight={ranged.length ? argmax(weekdays) : undefined}
               showValues
@@ -367,7 +381,7 @@ export default function CategoryScreen() {
 
         {/* calendar */}
         <View style={styles.section}>
-          <Text variant="heading">Every day, lately</Text>
+          <Text variant="heading">{S.everyDay}</Text>
           <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line, padding: 16, marginTop: 12 }]}>
             <Heatmap events={events} swatch={sw} now={now} />
           </View>
@@ -376,20 +390,20 @@ export default function CategoryScreen() {
         {/* history */}
         <View style={styles.section}>
           <View style={[styles.row, { justifyContent: 'space-between' }]}>
-            <Text variant="heading">History</Text>
+            <Text variant="heading">{S.history}</Text>
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push({ pathname: '/ask', params: { about: cat.name } })}
               style={[styles.row, { gap: 6 }]}>
               <Icon name="sparkle" size={14} color={t.inkSoft} />
               <Text variant="label" tone="soft">
-                Ask about {cat.name}
+                {S.askAbout(cat.name)}
               </Text>
             </Pressable>
           </View>
           {history.length === 0 && (
             <Text variant="body" tone="faint" style={{ marginTop: 12 }}>
-              Your entries will appear here, with the exact date and time of each one.
+              {S.historyEmpty}
             </Text>
           )}
           {history.slice(0, daysShown).map((g) => (
@@ -401,7 +415,7 @@ export default function CategoryScreen() {
               <View style={[styles.row, { justifyContent: 'space-between' }]}>
                 <Text variant="bodyStrong">{formatDayLabel(g.date, now)}</Text>
                 <Text variant="label" tone="faint">
-                  {g.items.length} {g.items.length === 1 ? 'time' : 'times'}
+                  {S.times(g.items.length)}
                 </Text>
               </View>
               <View style={styles.times}>
@@ -409,7 +423,7 @@ export default function CategoryScreen() {
                   <Pressable
                     key={e.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`${formatTime(new Date(e.occurredAt))}${e.place ? `, near ${e.place}` : ''}. Options`}
+                    accessibilityLabel={S.timeA11y(formatTime(new Date(e.occurredAt)), e.place)}
                     onPress={() => onEvent(e)}
                     style={({ pressed }) => [
                       styles.time,
@@ -427,7 +441,7 @@ export default function CategoryScreen() {
           {history.length > daysShown && (
             <PillButton
               variant="ghost"
-              label="Show more days"
+              label={S.showMore}
               onPress={() => setDaysShown((n) => n + 14)}
               style={{ marginTop: 16, height: 48 }}
             />
