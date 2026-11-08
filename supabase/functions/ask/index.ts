@@ -167,19 +167,25 @@ async function isSignedIn(req: Request): Promise<boolean> {
   }
 }
 
-/** OpenRouter's OpenAI-compatible chat completions endpoint. */
-async function callOpenRouter(system: string, user: string) {
-  const key = Deno.env.get('OPENROUTER_API_KEY');
-  if (!key) throw new Error('OPENROUTER_API_KEY is not set');
-  const models = (Deno.env.get('LLM_MODEL') || MODEL_DEFAULT)
+// The app gives up after 14s; leave it time to receive our reply.
+const DEADLINE_MS = 12_000;
+
+function modelList(): string[] {
+  return (Deno.env.get('LLM_MODEL') || MODEL_DEFAULT)
     .split(',')
     .map((m) => m.trim())
     .filter(Boolean)
     .slice(0, 3);
+}
+
+/** OpenRouter's OpenAI-compatible chat completions endpoint. */
+async function callOpenRouter(system: string, user: string, models: string[], deadline: number) {
+  const key = Deno.env.get('OPENROUTER_API_KEY');
+  if (!key) throw new Error('OPENROUTER_API_KEY is not set');
   const model = models[0];
 
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 12_000);
+  const timer = setTimeout(() => ctrl.abort(), Math.max(0, deadline - Date.now()));
   const send = () =>
     fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -192,7 +198,9 @@ async function callOpenRouter(system: string, user: string) {
       body: JSON.stringify({
         ...(models.length > 1 ? { models } : { model }),
         temperature: 0,
-        max_tokens: 500,
+        // room for reasoning models: if thinking eats the whole budget the answer comes back empty
+        max_tokens: 1500,
+        reasoning: { effort: 'low', exclude: true },
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: system },
@@ -219,10 +227,38 @@ async function callOpenRouter(system: string, user: string) {
         : Array.isArray(content)
           ? content.map((p: any) => p?.text ?? '').join('')
           : '';
-    return { text, model: data?.model ?? model };
+    return {
+      text,
+      model: String(data?.model ?? model),
+      finish: data?.choices?.[0]?.finish_reason as string | undefined,
+    };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Ask the models in order until one returns parseable JSON. OpenRouter's own
+ * `models` fallback only kicks in on errors, not on an empty or prose answer.
+ */
+async function querySpec(system: string, user: string) {
+  const deadline = Date.now() + DEADLINE_MS;
+  let remaining = modelList();
+  let lastError = 'Model did not return JSON';
+  while (remaining.length) {
+    const r = await callOpenRouter(system, user, remaining, deadline);
+    try {
+      return { spec: extractJson(r.text), model: r.model };
+    } catch {
+      lastError = `${r.model} did not return JSON (finish: ${r.finish ?? '?'}, reply: ${JSON.stringify(r.text.slice(0, 120))})`;
+      console.error(lastError);
+    }
+    // drop the model that answered (OpenRouter may report it with a suffix) and try the rest
+    const i = remaining.findIndex((m) => r.model === m || r.model.startsWith(m.split(':')[0]));
+    remaining = remaining.filter((_, j) => j !== (i === -1 ? 0 : i));
+    if (deadline - Date.now() < 2_000) break;
+  }
+  throw new Error(lastError);
 }
 
 /** Pull the first JSON object out of a model response, tolerating code fences. */
@@ -251,8 +287,7 @@ Deno.serve(async (req) => {
 
   try {
     const started = Date.now();
-    const { text, model } = await callOpenRouter(buildSystemPrompt(), buildUserPrompt(input));
-    const spec = extractJson(text);
+    const { spec, model } = await querySpec(buildSystemPrompt(), buildUserPrompt(input));
     return json({ spec, provider: 'openrouter', model, ms: Date.now() - started });
   } catch (err) {
     console.error('ask failed', err);
