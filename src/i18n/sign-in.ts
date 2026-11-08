@@ -12,7 +12,7 @@ export const signInStrings = defineStrings(
     google: 'Continue with Google',
     guest: 'Try it without an account',
     guestHint: 'No account? Explore with sample data — it stays on this phone.',
-    noBackendHint: 'Runs with sample data on this phone. Google sign-in turns on once Supabase keys are in .env.local.',
+    noBackendHint: 'Runs with sample data on this phone. Google sign-in turns on once Firebase keys are in .env.',
     error: 'Something went wrong. Please try again.',
   },
   {
@@ -26,7 +26,7 @@ export const signInStrings = defineStrings(
     guest: 'جرّبه بلا حساب',
     guestHint: 'ليس لديك حساب؟ استكشف ببيانات تجريبية — تبقى على هذا الهاتف.',
     noBackendHint:
-      'يعمل ببيانات تجريبية على هذا الهاتف. يُفعَّل تسجيل الدخول بحساب Google بعد إضافة مفاتيح Supabase إلى ملف ‎.env.local.',
+      'يعمل ببيانات تجريبية على هذا الهاتف. يُفعَّل تسجيل الدخول بحساب Google بعد إضافة مفاتيح Firebase إلى ملف ‎.env.',
     error: 'حدث خطأ ما. حاول مرة أخرى.',
   },
 );

@@ -1,7 +1,7 @@
-# Minimal Supabase CLI config. Run `supabase link --project-ref <ref>` before
-# `supabase db push` / `supabase functions deploy ask`.
+# Supabase now only hosts the "ask" edge function (auth + data moved to Firebase).
+# Run `supabase link --project-ref <ref>` before `supabase functions deploy ask`.
 project_id = "occur"
 
 [functions.ask]
-# the function verifies the user itself (see supabase/functions/ask/index.ts)
+# the function verifies the caller's Firebase ID token itself (see supabase/functions/ask/index.ts)
 verify_jwt = false

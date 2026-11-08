@@ -21,7 +21,7 @@ import { Text } from '@/components/text';
 import { signInStrings } from '@/i18n/sign-in';
 import { signInWithGoogle, startDemo } from '@/lib/auth';
 import { useStrings } from '@/lib/i18n';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import { isFirebaseConfigured } from '@/lib/firebase';
 import { font, useTheme } from '@/theme';
 import { swatch } from '@/theme/palette';
 
@@ -164,7 +164,7 @@ export default function SignIn() {
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(150).duration(600)} style={{ gap: 10, marginTop: 26 }}>
-          {isSupabaseConfigured && (
+          {isFirebaseConfigured && (
             <PillButton
               label={S.google}
               leading={
@@ -178,14 +178,14 @@ export default function SignIn() {
             />
           )}
           <PillButton
-            variant={isSupabaseConfigured ? 'ghost' : 'ink'}
-            icon={isSupabaseConfigured ? undefined : 'sparkle'}
+            variant={isFirebaseConfigured ? 'ghost' : 'ink'}
+            icon={isFirebaseConfigured ? undefined : 'sparkle'}
             label={S.guest}
             disabled={!!busy}
             onPress={() => run('guest', startDemo)}
           />
           <Text variant="caption" tone="faint" style={{ textAlign: 'center' }}>
-            {isSupabaseConfigured ? S.guestHint : S.noBackendHint}
+            {isFirebaseConfigured ? S.guestHint : S.noBackendHint}
           </Text>
           {!!error && (
             <Text variant="caption" tone="bad" style={{ textAlign: 'center' }}>

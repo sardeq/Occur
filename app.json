@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/images/icon.png",
-      "bundleIdentifier": "com.sadeqodeh.occur",
+      "bundleIdentifier": "com.delv.occur",
       "supportsTablet": false,
       "config": {
         "usesNonExemptEncryption": false
@@ -23,7 +23,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.sadeqodeh.occur"
+      "package": "com.delv.occur"
     },
     "web": {
       "output": "single",
@@ -63,6 +63,18 @@
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "description": "How many times, and when? One-tap life logging with natural-language answers."
+    "description": "How many times, and when? One-tap life logging with natural-language answers.",
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "supportsRTL": false,
+      "eas": {
+        "projectId": "8738b803-fe22-4079-8580-ff6b4b3d10fb"
+      }
+    },
+    "owner": "sadeqsha"
   }
 }

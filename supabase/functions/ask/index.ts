@@ -13,9 +13,16 @@
 //                        comma-separated list: OpenRouter falls back down the list
 //                        (handy for rate-limited ":free" models).
 //
-// Only signed-in users can call it: the function checks the caller's token with
-// Supabase Auth itself (deploy with --no-verify-jwt; the gateway's legacy JWT
-// check doesn't understand the project's newer asymmetric signing keys).
+//   FIREBASE_PROJECT_ID  required — users sign in with Firebase Auth
+//
+// Only signed-in users can call it: the function verifies the caller's Firebase
+// ID token itself. Deploy with --no-verify-jwt (or turn off "Verify JWT" in the
+// dashboard): the Supabase gateway only understands Supabase tokens.
+//
+// This stays on Supabase while Firebase is on the free Spark plan, where Cloud
+// Functions aren't available.
+
+import { createRemoteJWKSet, jwtVerify } from 'npm:jose@5.9.6';
 
 type AskRequest = {
   question: string;
@@ -135,16 +142,26 @@ function validate(body: unknown): AskRequest | string {
   };
 }
 
-/** True when the Authorization header belongs to a signed-in user. */
+// Firebase ID tokens are RS256 JWTs signed by Google's securetoken service.
+const FIREBASE_JWKS = createRemoteJWKSet(
+  new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'),
+);
+
+/** True when the Authorization header carries a valid Firebase ID token for our project. */
 async function isSignedIn(req: Request): Promise<boolean> {
-  const auth = req.headers.get('Authorization') ?? '';
-  if (!/^Bearer\s+\S+/.test(auth)) return false;
-  const url = Deno.env.get('SUPABASE_URL');
-  const apikey = Deno.env.get('SUPABASE_ANON_KEY') ?? req.headers.get('apikey') ?? '';
-  if (!url) return false;
+  const match = (req.headers.get('Authorization') ?? '').match(/^Bearer\s+(\S+)$/);
+  const projectId = Deno.env.get('FIREBASE_PROJECT_ID');
+  if (!match || !projectId) {
+    if (!projectId) console.error('FIREBASE_PROJECT_ID is not set');
+    return false;
+  }
   try {
-    const res = await fetch(`${url}/auth/v1/user`, { headers: { Authorization: auth, apikey } });
-    return res.ok;
+    const { payload } = await jwtVerify(match[1], FIREBASE_JWKS, {
+      issuer: `https://securetoken.google.com/${projectId}`,
+      audience: projectId,
+      algorithms: ['RS256'],
+    });
+    return typeof payload.sub === 'string' && payload.sub.length > 0;
   } catch {
     return false;
   }

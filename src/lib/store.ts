@@ -3,20 +3,43 @@
  *
  * Every write (tap, edit, delete) is applied to this in-memory store
  * immediately — the UI never waits for the network — and appended to a
- * persistent mutation queue. The queue is replayed against Supabase in order,
+ * persistent mutation queue. The queue is replayed against Firestore in order,
  * with retries and backoff. IDs are generated on the device, so replays are
  * idempotent upserts: tapping 20 times in airplane mode just works.
  *
  * The whole state (categories, events, queue) is cached in local storage per
  * user, so the app opens instantly with the last known data.
+ *
+ * Firestore layout: users/{uid}/categories/{id} and users/{uid}/events/{id}.
+ * Every write stamps `updated_at` with the server time, and deletes leave a
+ * tiny tombstone ({ deleted, updated_at }) instead of removing the doc. That
+ * lets a pull fetch only what changed since the last one (one read per changed
+ * doc, not one per doc in the account), deletes from other devices included.
  */
 import * as Crypto from 'expo-crypto';
+import {
+  collection,
+  doc,
+  getDocsFromServer,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  startAfter,
+  Timestamp,
+  where,
+  writeBatch,
+  type DocumentData,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
+  type WriteBatch,
+} from 'firebase/firestore';
 import { AppState } from 'react-native';
 import { create } from 'zustand';
 
+import { getDb, getFirebaseAuth, isFirebaseConfigured } from './firebase';
 import { kv } from './kv';
 import { captureLocation } from './location';
-import { isSupabaseConfigured, supabase } from './supabase';
 import { deviceTimeZone } from './time';
 import type { Category, Goal, OccurEvent } from './types';
 
@@ -104,6 +127,10 @@ export type Mutation =
 
 type Mode = 'remote' | 'local';
 
+/** Server time of the newest change already pulled, per collection. */
+type Cursor = { s: number; ns: number };
+type Cursors = { categories: Cursor | null; events: Cursor | null };
+
 type DataState = {
   userId: string | null;
   mode: Mode;
@@ -114,6 +141,7 @@ type DataState = {
   queue: Mutation[];
   syncing: boolean;
   lastSyncedAt: string | null;
+  cursors: Cursors;
   syncError: string | null;
 };
 
@@ -126,6 +154,7 @@ const initial: DataState = {
   queue: [],
   syncing: false,
   lastSyncedAt: null,
+  cursors: { categories: null, events: null },
   syncError: null,
 };
 
@@ -155,15 +184,16 @@ useData.subscribe((s, prev) => {
     s.categories === prev.categories &&
     s.events === prev.events &&
     s.queue === prev.queue &&
-    s.lastSyncedAt === prev.lastSyncedAt
+    s.lastSyncedAt === prev.lastSyncedAt &&
+    s.cursors === prev.cursors
   )
     return;
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
-    const { userId, categories, events, queue, lastSyncedAt } = get();
+    const { userId, categories, events, queue, lastSyncedAt, cursors } = get();
     if (!userId) return;
     try {
-      kv.setItem(cacheKey(userId), JSON.stringify({ categories, events, queue, lastSyncedAt }));
+      kv.setItem(cacheKey(userId), JSON.stringify({ categories, events, queue, lastSyncedAt, cursors }));
     } catch (err) {
       console.warn('cache write failed', err);
     }
@@ -195,6 +225,7 @@ export function initData(userId: string, mode: Mode, seed?: () => { categories: 
     events: (cached.events ?? []).slice().sort(byTime),
     queue: cached.queue ?? [],
     lastSyncedAt: cached.lastSyncedAt ?? null,
+    cursors: cached.cursors ?? initial.cursors,
   });
   if (mode === 'remote') void sync();
 }
@@ -363,27 +394,92 @@ function scheduleFlush(ms: number) {
   flushTimer = setTimeout(() => void flush(), ms);
 }
 
+// Firestore error codes that won't succeed on retry (bad data, rules). Everything
+// else — unavailable, deadline-exceeded, resource-exhausted (the free tier's daily
+// quota), unauthenticated (token refresh) — is retried with backoff.
+const PERMANENT = new Set([
+  'permission-denied',
+  'invalid-argument',
+  'failed-precondition',
+  'not-found',
+  'already-exists',
+  'out-of-range',
+  'unimplemented',
+  'data-loss',
+]);
+
 function isPermanent(err: any): boolean {
-  // Postgres / PostgREST errors are permanent (bad data, RLS). Network errors are not.
-  const code = String(err?.code ?? '');
-  return /^(22|23|42|PGRST)/.test(code);
+  return PERMANENT.has(String(err?.code ?? '').replace(/^firestore\//, ''));
+}
+
+// Firestore keeps offline writes pending instead of failing them, so a commit
+// never settles while offline. Give up after a while; our own queue keeps the
+// mutation and replays it (the writes are idempotent, so a late duplicate is harmless).
+const WRITE_TIMEOUT_MS = 15_000;
+const MAX_BATCH = 450; // Firestore allows 500 writes per batch
+
+function commit(batch: WriteBatch): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(Object.assign(new Error('Write timed out'), { code: 'deadline-exceeded' })),
+      WRITE_TIMEOUT_MS,
+    );
+    batch.commit().then(
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+const col = (uid: string, name: 'categories' | 'events') => collection(getDb(), 'users', uid, name);
+const tombstone = () => ({ deleted: true, updated_at: serverTimestamp() });
+
+/** The signed-in Firebase user, if it's the one whose data is loaded. */
+function currentUid(): string | null {
+  if (!isFirebaseConfigured) return null;
+  const uid = getFirebaseAuth().currentUser?.uid ?? null;
+  return uid && uid === get().userId ? uid : null;
 }
 
 /** Replays the queue in order. Consecutive event writes are batched. */
 export async function flush(): Promise<boolean> {
-  if (!isSupabaseConfigured || get().mode !== 'remote' || flushing) return false;
+  if (!isFirebaseConfigured || get().mode !== 'remote' || flushing) return false;
+  const uid = currentUid();
+  if (!uid) return false;
   flushing = true;
   try {
-    const { data: auth } = await supabase.auth.getSession();
-    if (!auth.session) return false;
-    return await drain();
+    return await drain(uid);
   } finally {
     flushing = false;
   }
 }
 
-async function drain(): Promise<boolean> {
+/** Tombstones a category and every event that points at it (Firestore has no cascade). */
+async function deleteCategoryRemote(uid: string, id: string) {
+  const db = getDb();
+  const snap = await getDocsFromServer(query(col(uid, 'events'), where('category_id', '==', id)));
+  const refs = snap.docs.map((d) => d.ref);
+  // events first and the category last, so an interrupted delete is simply redone
+  for (let i = 0; i < refs.length; i += MAX_BATCH) {
+    const b = writeBatch(db);
+    refs.slice(i, i + MAX_BATCH).forEach((r) => b.set(r, tombstone()));
+    await commit(b);
+  }
+  const b = writeBatch(db);
+  b.set(doc(col(uid, 'categories'), id), tombstone());
+  await commit(b);
+}
+
+async function drain(uid: string): Promise<boolean> {
+  const db = getDb();
   while (get().queue.length) {
+    if (get().userId !== uid) return false; // signed out / switched account mid-flush
     const queue = get().queue;
     const head = queue[0];
     // batch a run of the same simple kind
@@ -397,40 +493,40 @@ async function drain(): Promise<boolean> {
     }
     batch.forEach((m) => inFlight.add(m));
     try {
-      let error: any = null;
-      if (head.kind === 'upsertCategory') {
-        ({ error } = await supabase.from('categories').upsert(head.row, { onConflict: 'id' }));
-      } else if (head.kind === 'deleteCategory') {
-        ({ error } = await supabase.from('categories').delete().eq('id', head.id));
-      } else if (head.kind === 'upsertEvent') {
-        const rows = batch.map((m) => (m as Extract<Mutation, { kind: 'upsertEvent' }>).row);
-        ({ error } = await supabase.from('events').upsert(rows, { onConflict: 'id' }));
+      if (head.kind === 'deleteCategory') {
+        await deleteCategoryRemote(uid, head.id);
       } else {
-        ({ error } = await supabase
-          .from('events')
-          .delete()
-          .in(
-            'id',
-            batch.map((m) => m.id),
-          ));
+        const b = writeBatch(db);
+        if (head.kind === 'upsertCategory') {
+          b.set(doc(col(uid, 'categories'), head.id), { ...head.row, updated_at: serverTimestamp() });
+        } else if (head.kind === 'upsertEvent') {
+          for (const m of batch as Extract<Mutation, { kind: 'upsertEvent' }>[])
+            b.set(doc(col(uid, 'events'), m.id), { ...m.row, id: m.id, updated_at: serverTimestamp() });
+        } else {
+          for (const m of batch) b.set(doc(col(uid, 'events'), m.id), tombstone());
+        }
+        await commit(b);
       }
-      if (error) throw error;
       const sent = new Set(batch);
       set((s) => ({ queue: s.queue.filter((m) => !sent.has(m)), syncError: null }));
       backoff = 2000;
     } catch (err: any) {
       if (isPermanent(err)) {
         // drop the poison item so it can't block everything behind it
-        console.warn('dropping mutation', head.kind, err?.message);
+        console.warn('dropping mutation', head.kind, err?.code, err?.message);
         const sent = new Set(batch);
         set((s) => ({
           queue: s.queue.filter((m) => !sent.has(m)),
-          syncError:
-            err?.code === '23505' ? 'A category with that name already exists.' : (err?.message ?? 'Sync error'),
+          syncError: err?.message ?? 'Sync error',
         }));
         continue;
       }
-      set({ syncError: 'Offline — changes will sync when you reconnect.' });
+      const code = String(err?.code ?? '');
+      set({
+        syncError: code.endsWith('resource-exhausted')
+          ? 'The server is over its daily limit — changes will sync later.'
+          : 'Offline — changes will sync when you reconnect.',
+      });
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = setTimeout(() => void sync(), backoff);
       backoff = Math.min(backoff * 2, 60_000);
@@ -442,48 +538,76 @@ async function drain(): Promise<boolean> {
   return true;
 }
 
-async function fetchAll<T>(table: 'categories' | 'events', order: string): Promise<T[]> {
-  const page = 1000;
-  const out: T[] = [];
-  for (let from = 0; ; from += page) {
-    const { data, error } = await supabase
-      .from(table)
-      .select('*')
-      .order(order, { ascending: true })
-      .range(from, from + page - 1);
-    if (error) throw error;
-    out.push(...((data ?? []) as T[]));
-    if (!data || data.length < page) break;
+/** Every doc in the collection changed after `cursor` (all of them when null). */
+async function fetchChanges(
+  uid: string,
+  name: 'categories' | 'events',
+  cursor: Cursor | null,
+): Promise<{ docs: QueryDocumentSnapshot<DocumentData>[]; cursor: Cursor | null }> {
+  const page = 500;
+  const docs: QueryDocumentSnapshot<DocumentData>[] = [];
+  let last: QueryDocumentSnapshot<DocumentData> | null = null;
+  for (;;) {
+    const parts: QueryConstraint[] = [];
+    if (cursor) parts.push(where('updated_at', '>', new Timestamp(cursor.s, cursor.ns)));
+    parts.push(orderBy('updated_at'));
+    // page by document (not timestamp): a batch shares one server timestamp
+    if (last) parts.push(startAfter(last));
+    parts.push(limit(page));
+    // FromServer: never mistake an empty offline cache for "nothing changed"
+    const snap = await getDocsFromServer(query(col(uid, name), ...parts));
+    docs.push(...snap.docs);
+    if (snap.docs.length < page) break;
+    last = snap.docs[snap.docs.length - 1];
   }
-  return out;
+  const newest = docs.length ? (docs[docs.length - 1].get('updated_at') as Timestamp | undefined) : undefined;
+  return { docs, cursor: newest ? { s: newest.seconds, ns: newest.nanoseconds } : cursor };
 }
 
-/** Server snapshot, with any still-pending local changes re-applied on top. */
+const isoOf = (v: unknown): string | undefined =>
+  v instanceof Timestamp ? v.toDate().toISOString() : typeof v === 'string' ? v : undefined;
+
+/** Server changes merged into the local cache, with still-pending local changes re-applied on top. */
 export async function pull(): Promise<void> {
-  const [catRows, evRows] = await Promise.all([
-    fetchAll<CategoryRow>('categories', 'created_at'),
-    fetchAll<EventRow>('events', 'occurred_at'),
+  const uid = currentUid();
+  if (!uid) return;
+  const { cursors } = get();
+  const [catChanges, evChanges] = await Promise.all([
+    fetchChanges(uid, 'categories', cursors.categories),
+    fetchChanges(uid, 'events', cursors.events),
   ]);
-  let categories = catRows.map(fromCategoryRow);
-  let events = evRows.map(fromEventRow);
-  for (const m of get().queue) {
-    if (m.kind === 'upsertCategory') {
-      categories = [...categories.filter((c) => c.id !== m.id), fromCategoryRow(m.row)];
-    } else if (m.kind === 'deleteCategory') {
-      categories = categories.filter((c) => c.id !== m.id);
-      events = events.filter((e) => e.categoryId !== m.id);
-    } else if (m.kind === 'upsertEvent') {
-      events = [...events.filter((e) => e.id !== m.id), fromEventRow(m.row)];
-    } else {
-      events = events.filter((e) => e.id !== m.id);
-    }
+  if (get().userId !== uid) return;
+
+  const categories = new Map(get().categories.map((c) => [c.id, c]));
+  const events = new Map(get().events.map((e) => [e.id, e]));
+  for (const d of catChanges.docs) {
+    const data = d.data();
+    if (data.deleted) categories.delete(d.id);
+    else categories.set(d.id, fromCategoryRow({ ...(data as CategoryRow), id: d.id, updated_at: isoOf(data.updated_at) }));
   }
-  set({ categories, events: events.sort(byTime), lastSyncedAt: new Date().toISOString() });
+  for (const d of evChanges.docs) {
+    const data = d.data();
+    if (data.deleted) events.delete(d.id);
+    else events.set(d.id, fromEventRow({ ...(data as EventRow), id: d.id }));
+  }
+  for (const m of get().queue) {
+    if (m.kind === 'upsertCategory') categories.set(m.id, fromCategoryRow(m.row));
+    else if (m.kind === 'deleteCategory') categories.delete(m.id);
+    else if (m.kind === 'upsertEvent') events.set(m.id, fromEventRow(m.row));
+    else events.delete(m.id);
+  }
+  set({
+    categories: [...categories.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    // an event whose category is gone went with it
+    events: [...events.values()].filter((e) => categories.has(e.categoryId)).sort(byTime),
+    cursors: { categories: catChanges.cursor, events: evChanges.cursor },
+    lastSyncedAt: new Date().toISOString(),
+  });
 }
 
 let syncing: Promise<void> | null = null;
 export function sync(): Promise<void> {
-  if (get().mode !== 'remote' || !isSupabaseConfigured) return Promise.resolve();
+  if (get().mode !== 'remote' || !isFirebaseConfigured) return Promise.resolve();
   if (syncing) return syncing;
   syncing = (async () => {
     set({ syncing: true });

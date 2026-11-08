@@ -1,0 +1,79 @@
+rules_version = '2';
+
+// Occur — "How many times, and when?"
+// Everything lives under users/{uid}/… and only that signed-in user can touch it
+// (the Firestore equivalent of the old Postgres RLS policies).
+//
+// IDs are generated on the device so taps can be recorded offline and replayed
+// later without duplicates (writes are idempotent `set`s). Every write stamps
+// updated_at with the server time; deletes write a tombstone
+// { deleted: true, updated_at } so other devices can pull them incrementally.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function stamped(d) {
+      return d.updated_at == request.time;
+    }
+
+    function isTombstone(d) {
+      return d.keys().hasOnly(['deleted', 'updated_at']) && d.get('deleted', false) == true && stamped(d);
+    }
+
+    function optString(d, key, max) {
+      return d.get(key, null) == null || (d[key] is string && d[key].size() <= max);
+    }
+
+    function optNumberIn(d, key, lo, hi) {
+      return d.get(key, null) == null || (d[key] is number && d[key] >= lo && d[key] <= hi);
+    }
+
+    // the things a user counts ("Coffee", "Smoking", "Headache"…)
+    function isCategory(d, id) {
+      return d.keys().hasOnly(['id', 'name', 'emoji', 'color', 'goal', 'track_location', 'created_at', 'updated_at'])
+        && d.id == id
+        && d.name is string && d.name.trim().size() >= 1 && d.name.size() <= 40
+        && d.emoji is string && d.emoji.size() <= 16
+        && d.color is string && d.color.size() <= 32
+        // what the user wants from this count: observe, do it more, do it less
+        && d.goal in ['track', 'more', 'less']
+        && d.track_location is bool
+        && d.created_at is string && d.created_at.size() <= 40
+        && stamped(d);
+    }
+
+    // one doc per tap
+    function isEvent(d, id) {
+      return d.keys().hasOnly(['id', 'category_id', 'occurred_at', 'tz', 'latitude', 'longitude', 'place', 'note', 'source', 'updated_at'])
+        && d.id == id
+        && d.category_id is string && d.category_id.size() <= 64
+        && d.occurred_at is string && d.occurred_at.size() <= 40
+        && optString(d, 'tz', 64)
+        && optNumberIn(d, 'latitude', -90, 90)
+        && optNumberIn(d, 'longitude', -180, 180)
+        && optString(d, 'place', 120)
+        && optString(d, 'note', 280)
+        && d.source in ['tap', 'manual', 'import']
+        && stamped(d);
+    }
+
+    match /users/{uid} {
+      match /categories/{id} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && (isTombstone(request.resource.data) || isCategory(request.resource.data, id));
+        // hard deletes are allowed (e.g. purging tombstones / deleting an account)
+        allow delete: if isOwner(uid);
+      }
+      match /events/{id} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && (isTombstone(request.resource.data) || isEvent(request.resource.data, id));
+        allow delete: if isOwner(uid);
+      }
+    }
+  }
+}

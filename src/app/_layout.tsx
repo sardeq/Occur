@@ -116,7 +116,6 @@ export default function RootLayout() {
           <Stack.Protected guard={!authed} redirectTo="/">
             <Stack.Screen name="sign-in" options={{ animation: 'fade' }} />
           </Stack.Protected>
-          <Stack.Screen name="auth/callback" />
           <Stack.Screen name="explore" />
         </Stack>
         <DialogHost />
