@@ -12,7 +12,7 @@ import { tapHaptic } from '@/components/buttons';
 import { EmptyState } from '@/components/empty-state';
 import { FilterBar } from '@/components/filter-bar';
 import { Icon, type IconName } from '@/components/icon';
-import { TapBubble } from '@/components/tap-bubble';
+import { BubbleMinus, TapBubble } from '@/components/tap-bubble';
 import { Text } from '@/components/text';
 import { useCategories } from '@/hooks/use-categories';
 import { useNow } from '@/hooks/use-now';
@@ -324,6 +324,24 @@ export default function Home() {
                   onLog={() => onLog(c)}
                   onRemove={() => onRemove(c)}
                   onOpen={() => openCategory(c)}
+                />
+              );
+            })}
+            {/* "−" buttons go in their own pass, after every bubble, so no neighbour can cover them */}
+            {layout.placed.map((p) => {
+              const c = p.id === ADD ? undefined : byId.get(p.id);
+              if (!c) return null;
+              return (
+                <BubbleMinus
+                  key={`minus-${c.id}`}
+                  id={c.id}
+                  x={p.x}
+                  y={p.y}
+                  size={p.r * 2}
+                  swatch={swatch(c.color)}
+                  name={c.name}
+                  todayCount={todayCounts[c.id] ?? 0}
+                  onRemove={() => onRemove(c)}
                 />
               );
             })}

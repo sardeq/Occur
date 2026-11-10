@@ -1,9 +1,10 @@
 import * as Haptics from 'expo-haptics';
 import { useEffect, useRef } from 'react';
-import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { Platform, Pressable, StyleSheet, type GestureResponderEvent } from 'react-native';
 import Animated, {
   Easing,
   ZoomIn,
+  ZoomOut,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -17,6 +18,7 @@ import Animated, {
 import { componentStrings } from '@/i18n/home';
 import { isRTL, useLang, useStrings } from '@/lib/i18n';
 import { useFont } from '@/theme';
+import type { Swatch } from '@/theme/palette';
 import { Bubble, type BubbleProps } from './bubble';
 import { Icon } from './icon';
 
@@ -67,43 +69,15 @@ export function TapBubble({
   const size = bubble.size;
   const reduce = useReducedMotion();
   const s = useStrings(componentStrings);
-  const rtl = isRTL(useLang());
   const f = useFont();
-  // the "−" sits at the bottom corner on the reading-end side
-  const minusOffset = (size / 2 + 2) * 0.7071;
-  const seed = hash(id);
 
-  const left = useSharedValue(x - size / 2);
-  const top = useSharedValue(y - size / 2);
+  const position = useSpringPosition(x, y, size, 0);
+  const bob = useBob(id);
   const press = useSharedValue(1);
-  const bob = useSharedValue(0);
   const ripple = useSharedValue(1);
   const plus = useSharedValue(1);
   const minus = useSharedValue(1);
   const start = useRef<{ x: number; y: number } | null>(null);
-
-  useEffect(() => {
-    left.set(withSpring(x - size / 2, { damping: 18, stiffness: 120 }));
-    top.set(withSpring(y - size / 2, { damping: 18, stiffness: 120 }));
-  }, [x, y, size, left, top]);
-
-  useEffect(() => {
-    if (reduce) return;
-    const d = 2200 + (seed % 1300);
-    bob.set(
-      withDelay(
-        seed % 900,
-        withRepeat(
-          withSequence(
-            withTiming(-1, { duration: d, easing: Easing.inOut(Easing.sin) }),
-            withTiming(1, { duration: d, easing: Easing.inOut(Easing.sin) }),
-          ),
-          -1,
-          true,
-        ),
-      ),
-    );
-  }, [reduce, seed, bob]);
 
   useEffect(() => {
     if (pulse === 0) return;
@@ -124,7 +98,6 @@ export function TapBubble({
     press.set(withSequence(withTiming(0.92, { duration: 90 }), withSpring(1, { damping: 8, stiffness: 260 })));
   }, [minusPulse, minus, press]);
 
-  const position = useAnimatedStyle(() => ({ left: left.get(), top: top.get() }));
   const motion = useAnimatedStyle(() => ({
     transform: [{ translateY: bob.get() * 3 }, { scale: press.get() }],
   }));
@@ -217,38 +190,130 @@ export function TapBubble({
             ]}>
             −1
           </Animated.Text>
-          {todayCount > 0 && (
-            <View
-              style={[
-                styles.minusWrap,
-                { left: size / 2 + (rtl ? -minusOffset : minusOffset) - 20, top: size / 2 + minusOffset - 20 },
-              ]}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={s.takeOneAway(bubble.name ?? '')}
-                hitSlop={8}
-                onPress={onRemove}
-                style={({ pressed }) => [
-                  styles.minus,
-                  {
-                    backgroundColor: '#FFFFFF',
-                    borderColor: bubble.swatch.deep,
-                    transform: [{ scale: pressed ? 0.9 : 1 }],
-                  },
-                ]}>
-                <Icon name="minus" size={20} color="#1A1712" strokeWidth={3} />
-              </Pressable>
-            </View>
-          )}
         </Animated.View>
       </Animated.View>
     </Animated.View>
   );
 }
 
+/** Room around the bubble so the "−" (which pokes past the rim) stays inside its parent's bounds — Android won't hit-test outside them. */
+const MINUS_PAD = 32;
+const MINUS_SIZE = 40;
+
+/**
+ * The small "−" (take one away) for a bubble. Rendered by the screen in a
+ * separate pass *after* every bubble, so it always sits on top: it pokes past
+ * the bubble's rim, and a neighbouring bubble's (square) touch area would
+ * otherwise swallow taps on it. Follows the bubble's position spring and idle
+ * float so the two stay glued together.
+ */
+export function BubbleMinus({
+  id,
+  x,
+  y,
+  size,
+  swatch,
+  name,
+  todayCount,
+  onRemove,
+}: {
+  id: string;
+  x: number;
+  y: number;
+  size: number;
+  swatch: Swatch;
+  name?: string;
+  todayCount: number;
+  onRemove: () => void;
+}) {
+  const reduce = useReducedMotion();
+  const s = useStrings(componentStrings);
+  const rtl = isRTL(useLang());
+  const position = useSpringPosition(x, y, size, MINUS_PAD);
+  const bob = useBob(id);
+  const motion = useAnimatedStyle(() => ({ transform: [{ translateY: bob.get() * 3 }] }));
+
+  // the "−" sits at the bottom corner on the reading-end side
+  const offset = (size / 2 + 2) * 0.7071;
+  const c = size / 2 + MINUS_PAD;
+  const box = size + MINUS_PAD * 2;
+
+  return (
+    // always mounted (even with nothing to take away) so the float stays in phase with the bubble
+    <Animated.View pointerEvents="box-none" style={[styles.abs, { width: box, height: box }, position]}>
+      <Animated.View pointerEvents="box-none" style={[{ flex: 1 }, motion]}>
+        {todayCount > 0 && (
+          <Animated.View
+            entering={reduce ? undefined : ZoomIn.springify().damping(14)}
+            exiting={reduce ? undefined : ZoomOut.duration(160)}
+            style={[
+              styles.minusWrap,
+              {
+                left: c + (rtl ? -offset : offset) - MINUS_SIZE / 2,
+                top: c + offset - MINUS_SIZE / 2,
+              },
+            ]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={s.takeOneAway(name ?? '')}
+              hitSlop={8}
+              onPress={onRemove}
+              style={({ pressed }) => [
+                styles.minus,
+                {
+                  backgroundColor: '#FFFFFF',
+                  borderColor: swatch.deep,
+                  transform: [{ scale: pressed ? 0.9 : 1 }],
+                },
+              ]}>
+              <Icon name="minus" size={20} color="#1A1712" strokeWidth={3} />
+            </Pressable>
+          </Animated.View>
+        )}
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+/** Springs a view's top-left to follow a centre point (x, y), with `pad` of extra room around a `size` box. */
+function useSpringPosition(x: number, y: number, size: number, pad: number) {
+  const left = useSharedValue(x - size / 2 - pad);
+  const top = useSharedValue(y - size / 2 - pad);
+  useEffect(() => {
+    left.set(withSpring(x - size / 2 - pad, { damping: 18, stiffness: 120 }));
+    top.set(withSpring(y - size / 2 - pad, { damping: 18, stiffness: 120 }));
+  }, [x, y, size, pad, left, top]);
+  return useAnimatedStyle(() => ({ left: left.get(), top: top.get() }));
+}
+
+/** Gentle idle float, deterministic per id so a bubble and its "−" move together. */
+function useBob(id: string) {
+  const reduce = useReducedMotion();
+  const seed = hash(id);
+  const bob = useSharedValue(0);
+  useEffect(() => {
+    if (reduce) return;
+    const d = 2200 + (seed % 1300);
+    bob.set(
+      withDelay(
+        seed % 900,
+        withRepeat(
+          withSequence(
+            withTiming(-1, { duration: d, easing: Easing.inOut(Easing.sin) }),
+            withTiming(1, { duration: d, easing: Easing.inOut(Easing.sin) }),
+          ),
+          -1,
+          true,
+        ),
+      ),
+    );
+  }, [reduce, seed, bob]);
+  return bob;
+}
+
 const styles = StyleSheet.create({
   abs: { position: 'absolute' },
-  minusWrap: { position: 'absolute', width: 40, height: 40 },
+  minusWrap: { position: 'absolute', width: MINUS_SIZE, height: MINUS_SIZE },
   minus: {
     width: 40,
     height: 40,
