@@ -104,6 +104,12 @@ const PLACES = {
   ar: ['شارع الرينبو، جبل عمّان', 'بوليفارد العبدلي'],
 };
 
+/** A demo place name in `lang` (real places pass through unchanged). */
+export function localizePlace(place: string, lang: 'en' | 'ar'): string {
+  const i = PLACES.en.indexOf(place) >= 0 ? PLACES.en.indexOf(place) : PLACES.ar.indexOf(place);
+  return i >= 0 ? PLACES[lang][i] : place;
+}
+
 function pickHour(r: () => number, hours: [number, number][]): number {
   const total = hours.reduce((a, [, w]) => a + w, 0);
   let x = r() * total;

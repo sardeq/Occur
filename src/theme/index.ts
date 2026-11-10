@@ -4,48 +4,54 @@ import { useLang } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs';
 
 /**
- * Occur's look: warm paper, black ink, soft gradient bubbles. One rounded,
- * very readable family (Nunito) everywhere — heavy weights for numbers and
+ * Occur's look: a cool, quiet neutral base with one indigo accent, so the
+ * colourful bubbles are the only loud thing on screen. One rounded, very
+ * readable family (Nunito) everywhere — heavy weights for numbers and
  * headlines, regular weights for UI text — so it stays legible at a glance.
  */
 
 const light = {
   scheme: 'light' as 'light' | 'dark',
-  bg: '#F3EEE5',
-  bgDeep: '#EAE3D7',
-  surface: '#FBF8F2',
-  surfaceAlt: '#ECE5D9',
-  ink: '#18150F',
-  inkSoft: '#4F493F',
-  inkFaint: '#7A7266',
-  line: 'rgba(24, 21, 15, 0.09)',
-  lineStrong: 'rgba(24, 21, 15, 0.18)',
-  /** the black pill */
-  pill: '#18150F',
-  pillInk: '#F7F2E9',
-  good: '#2E8A58',
-  bad: '#CF4F35',
-  shadow: '#5A4A30',
-  overlay: 'rgba(24, 21, 15, 0.35)',
+  bg: '#F4F5F9',
+  bgDeep: '#E9EBF2',
+  surface: '#FFFFFF',
+  surfaceAlt: '#EBEDF3',
+  ink: '#141726',
+  inkSoft: '#4B5064',
+  inkFaint: '#7D8397',
+  line: 'rgba(20, 23, 38, 0.08)',
+  lineStrong: 'rgba(20, 23, 38, 0.16)',
+  /** the primary pill (buttons, selected states) */
+  pill: '#4F46E5',
+  pillInk: '#FFFFFF',
+  /** brand accent for icons, badges and the main + button */
+  accent: '#4F46E5',
+  accentInk: '#FFFFFF',
+  good: '#178A4C',
+  bad: '#E5484D',
+  shadow: '#1E2440',
+  overlay: 'rgba(14, 17, 30, 0.4)',
 };
 
 const dark: typeof light = {
   scheme: 'dark',
-  bg: '#13110E',
-  bgDeep: '#0D0C0A',
-  surface: '#1D1A16',
-  surfaceAlt: '#29251F',
-  ink: '#F5EFE4',
-  inkSoft: '#C4BAAA',
-  inkFaint: '#968D80',
-  line: 'rgba(245, 239, 228, 0.09)',
-  lineStrong: 'rgba(245, 239, 228, 0.2)',
-  pill: '#F5EFE4',
-  pillInk: '#16130F',
-  good: '#5CC98C',
-  bad: '#FF7E62',
+  bg: '#0E1015',
+  bgDeep: '#08090D',
+  surface: '#181A22',
+  surfaceAlt: '#22252F',
+  ink: '#F1F3F9',
+  inkSoft: '#B4B9CA',
+  inkFaint: '#848A9E',
+  line: 'rgba(241, 243, 249, 0.08)',
+  lineStrong: 'rgba(241, 243, 249, 0.18)',
+  pill: '#8B90FA',
+  pillInk: '#0E1015',
+  accent: '#8B90FA',
+  accentInk: '#0E1015',
+  good: '#4ADE80',
+  bad: '#FF7A7E',
   shadow: '#000000',
-  overlay: 'rgba(0, 0, 0, 0.5)',
+  overlay: 'rgba(0, 0, 0, 0.55)',
 };
 
 export type Theme = typeof light;

@@ -12,7 +12,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
 
 import { Bubble } from '@/components/bubble';
 import { PillButton } from '@/components/buttons';
@@ -64,7 +63,6 @@ export default function SignIn() {
   const { width, height } = useWindowDimensions();
   const [busy, setBusy] = useState<'google' | 'guest' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const stage = Math.min(height * 0.5, 460);
   const S = useStrings(signInStrings);
 
   const run = async (which: 'google' | 'guest', fn: () => Promise<unknown>) => {
@@ -79,27 +77,15 @@ export default function SignIn() {
     }
   };
 
-  const W = width;
+  // keep the layout sane on tablets / web: the stage never gets wider than a phone
+  const W = Math.min(width, 440);
+  const stage = Math.min(height * 0.46, W * 1.05);
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg, paddingTop: insets.top }]}>
-      {/* stage */}
-      <View style={{ height: stage }}>
-        <Svg width={W} height={stage} style={StyleSheet.absoluteFill}>
-          <Path
-            d={`M -20 ${stage * 0.2} C ${W * 0.3} ${stage * 0.05}, ${W * 0.55} ${stage * 0.6}, ${W + 20} ${stage * 0.35}`}
-            stroke={t.lineStrong}
-            strokeWidth={1.2}
-            fill="none"
-          />
-          <Path
-            d={`M -20 ${stage * 0.85} C ${W * 0.25} ${stage * 0.6}, ${W * 0.7} ${stage}, ${W + 20} ${stage * 0.7}`}
-            stroke={t.line}
-            strokeWidth={1.2}
-            fill="none"
-          />
-        </Svg>
-        <Floating delay={0} style={{ left: W * 0.08, top: stage * 0.1 }}>
+      {/* stage: a few floating bubbles */}
+      <View style={{ height: stage, width: W, alignSelf: 'center' }}>
+        <Floating delay={0} style={{ left: W * 0.07, top: stage * 0.1 }}>
           <Bubble
             size={W * 0.36}
             swatch={swatch('apricot')}
@@ -110,9 +96,9 @@ export default function SignIn() {
             nowHour={16.3}
           />
         </Floating>
-        <Floating delay={500} amp={8} style={{ left: W * 0.55, top: stage * 0.02 }}>
+        <Floating delay={500} amp={8} style={{ left: W * 0.6, top: stage * 0.04 }}>
           <Bubble
-            size={W * 0.26}
+            size={W * 0.28}
             swatch={swatch('sky')}
             emoji="💧"
             count={6}
@@ -121,54 +107,51 @@ export default function SignIn() {
             nowHour={16.3}
           />
         </Floating>
-        <Floating delay={900} amp={5} style={{ left: W * 0.5, top: stage * 0.42 }}>
+        <Floating delay={900} amp={5} style={{ left: W * 0.47, top: stage * 0.44 }}>
           <Bubble
-            size={W * 0.42}
-            swatch={swatch('slate')}
-            emoji="🚬"
+            size={W * 0.4}
+            swatch={swatch('lilac')}
+            emoji="📖"
             count={2}
-            name={S.smoking}
-            dots={[9.5, 13.2]}
+            name={S.reading}
+            dots={[13.2, 22]}
             nowHour={16.3}
           />
         </Floating>
-        <Floating delay={300} amp={7} style={{ left: W * 0.14, top: stage * 0.6 }}>
+        <Floating delay={300} amp={7} style={{ left: W * 0.15, top: stage * 0.62 }}>
           <Bubble size={W * 0.22} swatch={swatch('mint')} emoji="🏋️" count={1} dots={[7.2]} />
         </Floating>
       </View>
 
-      {/* copy + actions */}
+      {/* copy + actions — centred, so Latin wordmark and Arabic copy line up the same way */}
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 20 }]}>
-        <Animated.View entering={FadeInDown.duration(600)}>
-          <Text variant="eyebrow" tone="soft">
-            {S.eyebrow}
-          </Text>
+        <Animated.View entering={FadeInDown.duration(600)} style={styles.copy}>
           <Text
             keepFont
             style={{
               fontFamily: font.display,
-              fontSize: 64,
-              lineHeight: 74,
+              fontSize: 56,
+              lineHeight: 64,
               color: t.ink,
-              marginTop: 6,
               letterSpacing: -1.5,
+              textAlign: 'center',
             }}>
             Occur
           </Text>
-          <Text variant="subheading" tone="soft" style={{ fontSize: 24, lineHeight: 28 }}>
+          <Text variant="subheading" style={{ color: t.accent, textAlign: 'center', marginTop: 2 }}>
             {S.tagline}
           </Text>
-          <Text variant="body" tone="soft" style={{ marginTop: 12, maxWidth: 340 }}>
+          <Text variant="body" tone="soft" style={{ marginTop: 12, textAlign: 'center' }}>
             {S.pitch}
           </Text>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(150).duration(600)} style={{ gap: 10, marginTop: 26 }}>
+        <Animated.View entering={FadeInDown.delay(150).duration(600)} style={{ gap: 10, marginTop: 28 }}>
           {isFirebaseConfigured && (
             <PillButton
               label={S.google}
               leading={
-                <View style={[styles.gBadge, { backgroundColor: '#fff' }]}>
+                <View style={styles.gBadge}>
                   <GoogleMark size={16} />
                 </View>
               }
@@ -184,7 +167,7 @@ export default function SignIn() {
             disabled={!!busy}
             onPress={() => run('guest', startDemo)}
           />
-          <Text variant="caption" tone="faint" style={{ textAlign: 'center' }}>
+          <Text variant="caption" tone="faint" style={{ textAlign: 'center', marginTop: 2 }}>
             {isFirebaseConfigured ? S.guestHint : S.noBackendHint}
           </Text>
           {!!error && (
@@ -200,6 +183,21 @@ export default function SignIn() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  bottom: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 24 },
-  gBadge: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  bottom: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 24,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+  },
+  copy: { alignItems: 'center', alignSelf: 'center', maxWidth: 360 },
+  gBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
 });

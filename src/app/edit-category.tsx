@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bubble } from '@/components/bubble';
 import { Chip, NavButton, PillButton, tapHaptic } from '@/components/buttons';
 import { Text } from '@/components/text';
+import { useCategories } from '@/hooks/use-categories';
 import { editingStrings } from '@/i18n/editing';
 import { showDialog } from '@/lib/dialog';
 import { useLang, useStrings } from '@/lib/i18n';
@@ -46,7 +47,7 @@ export default function EditCategory() {
   const lang = useLang();
   const f = useFont();
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const categories = useData((s) => s.categories);
+  const categories = useCategories();
   const eventCount = useData((s) => (id ? s.events.filter((e) => e.categoryId === id).length : 0));
   const existing = useMemo(() => categories.find((c) => c.id === id), [categories, id]);
   const editing = !!existing;

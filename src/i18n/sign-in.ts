@@ -4,8 +4,7 @@ export const signInStrings = defineStrings(
   {
     coffee: 'Coffee',
     water: 'Water',
-    smoking: 'Smoking',
-    eyebrow: 'How many times, and when?',
+    reading: 'Reading',
     tagline: 'Click. Click. Done.',
     pitch:
       'Make a bubble for anything you want to count. Tap it when it happens — Occur remembers when, and answers your questions about it later.',
@@ -18,8 +17,7 @@ export const signInStrings = defineStrings(
   {
     coffee: 'قهوة',
     water: 'ماء',
-    smoking: 'تدخين',
-    eyebrow: 'كم مرة، ومتى؟',
+    reading: 'قراءة',
     tagline: 'نقرة. نقرة. تم.',
     pitch: 'أنشئ فقاعة لأي شيء تريد عدّه. انقر عليها عندما يحدث — يتذكّر Occur الوقت، ويجيب عن أسئلتك حوله لاحقًا.',
     google: 'المتابعة بحساب Google',

@@ -7,6 +7,7 @@ import { NavButton } from '@/components/buttons';
 import { Bars, DayStrip } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
+import { useCategories } from '@/hooks/use-categories';
 import { useNow } from '@/hooks/use-now';
 import { insightsStrings } from '@/i18n/insights';
 import { useLang, useStrings } from '@/lib/i18n';
@@ -38,7 +39,7 @@ export default function Insights() {
   const S = useStrings(insightsStrings);
   const lang = useLang();
   const now = useNow(60_000);
-  const categories = useData((s) => s.categories);
+  const categories = useCategories();
   const events = useData((s) => s.events);
 
   const data = useMemo(() => {

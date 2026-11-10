@@ -8,6 +8,7 @@ import { NavButton, tapHaptic } from '@/components/buttons';
 import { Bars } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
+import { useCategories } from '@/hooks/use-categories';
 import { askStrings } from '@/i18n/ask';
 import { getLang, useStrings } from '@/lib/i18n';
 import { ask } from '@/lib/query/ask';
@@ -105,7 +106,7 @@ export default function Ask() {
   const S = useStrings(askStrings);
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ q?: string; about?: string }>();
-  const categories = useData((s) => s.categories);
+  const categories = useCategories();
   const events = useData((s) => s.events);
   const [input, setInput] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);

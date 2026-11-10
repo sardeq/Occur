@@ -46,10 +46,16 @@ const EN_BY_AR = new Map(Object.entries(NAMES_AR).map(([en, ar]) => [ar, en]));
 /** The English key of a starter idea, given its name in either language. */
 const keyOf = (name: string) => EN_BY_AR.get(name) ?? name;
 
+/** A starter idea's name in `lang`; any other name comes back unchanged. */
+export function localizeName(name: string, lang: Lang = getLang()): string {
+  const key = keyOf(name.trim());
+  if (!Object.prototype.hasOwnProperty.call(NAMES_AR, key)) return name;
+  return lang === 'ar' ? NAMES_AR[key] : key;
+}
+
 /** A starter idea with its name in `lang` (non-suggestions pass through unchanged). */
 export function localizeSuggestion(s: CategoryInput, lang: Lang = getLang()): CategoryInput {
-  const key = keyOf(s.name);
-  const name = lang === 'ar' ? (NAMES_AR[key] ?? s.name) : key;
+  const name = localizeName(s.name, lang);
   return name === s.name ? s : { ...s, name };
 }
 

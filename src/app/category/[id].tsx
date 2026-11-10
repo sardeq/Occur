@@ -10,10 +10,12 @@ import { Chip, NavButton, PillButton } from '@/components/buttons';
 import { Bars, ClockChart, Heatmap } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
+import { useCategory } from '@/hooks/use-categories';
 import { useNow } from '@/hooks/use-now';
 import { insightsStrings } from '@/i18n/insights';
 import { useLang, useStrings } from '@/lib/i18n';
 import { argmax, gaps, hourHistogram, inRange, periodStats, streaks, typicalHour, weekdayHistogram } from '@/lib/stats';
+import { localizePlace } from '@/lib/demo';
 import { showActionSheet } from '@/lib/dialog';
 import { deleteEvent, logEvent, removeLatestToday, useData } from '@/lib/store';
 import {
@@ -97,7 +99,7 @@ export default function CategoryScreen() {
   const S = useStrings(insightsStrings);
   const lang = useLang();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const cat = useData((s) => s.categories.find((c) => c.id === id));
+  const cat = useCategory(id);
   const all = useData((s) => s.events);
   const now = useNow(60_000);
   const [range, setRange] = useState<(typeof RANGES)[number]['key']>('30');
@@ -165,7 +167,7 @@ export default function CategoryScreen() {
   const onEvent = (e: OccurEvent) => {
     const d = new Date(e.occurredAt);
     const title = S.dayAt(formatDate(d, now), formatTime(d));
-    const message = e.place ? S.near(e.place) : undefined;
+    const message = e.place ? S.near(localizePlace(e.place, lang)) : undefined;
     const edit = () => router.push({ pathname: '/log-time', params: { categoryId: cat.id, eventId: e.id } });
     const del = () => {
       deleteEvent(e.id);
@@ -240,7 +242,7 @@ export default function CategoryScreen() {
                   formatDayLabel(new Date(lastEvent.occurredAt), now),
                   formatTime(new Date(lastEvent.occurredAt)),
                 )}
-                {lastEvent.place ? S.nearSuffix(lastEvent.place) : ''}
+                {lastEvent.place ? S.nearSuffix(localizePlace(lastEvent.place, lang)) : ''}
               </Text>
             </>
           ) : (
@@ -423,7 +425,7 @@ export default function CategoryScreen() {
                   <Pressable
                     key={e.id}
                     accessibilityRole="button"
-                    accessibilityLabel={S.timeA11y(formatTime(new Date(e.occurredAt)), e.place)}
+                    accessibilityLabel={S.timeA11y(formatTime(new Date(e.occurredAt)), e.place ? localizePlace(e.place, lang) : e.place)}
                     onPress={() => onEvent(e)}
                     style={({ pressed }) => [
                       styles.time,

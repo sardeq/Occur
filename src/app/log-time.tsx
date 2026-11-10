@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Chip, PillButton } from '@/components/buttons';
 import { Text } from '@/components/text';
+import { useCategory } from '@/hooks/use-categories';
 import { editingStrings } from '@/i18n/editing';
 import { useStrings } from '@/lib/i18n';
 import { logEvent, updateEvent, useData } from '@/lib/store';
@@ -18,7 +19,7 @@ export default function LogTime() {
   const insets = useSafeAreaInsets();
   const S = useStrings(editingStrings);
   const { categoryId, eventId } = useLocalSearchParams<{ categoryId: string; eventId?: string }>();
-  const cat = useData((s) => s.categories.find((c) => c.id === categoryId));
+  const cat = useCategory(categoryId);
   const existing = useData((s) => (eventId ? s.events.find((e) => e.id === eventId) : undefined));
   const [date, setDate] = useState(() =>
     existing ? new Date(existing.occurredAt) : new Date(Date.now() - 15 * MINUTE),
